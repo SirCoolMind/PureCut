@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { runRMBG, runISNet, preloadRMBG } from './aiEngine.js'
 import { preload as imglyPreload } from '@imgly/background-removal'
 import {
@@ -81,6 +81,8 @@ const brushMode = ref('erase') // 'erase' | 'restore'
 const brushSize = ref(35)
 const isDrawing = ref(false)
 const brushCanvasRef = ref(null)
+const displayCanvasRef = ref(null) // Live GPU-composited preview canvas
+let rAFPending = false // requestAnimationFrame batching flag
 
 const sliderPosition = ref(50)
 const previewBg = ref('checkerboard') // 'checkerboard', 'white', 'black', 'gradient'
@@ -290,7 +292,51 @@ function reRunModel() {
   }
 }
 
-// Canvas Compositing Engine: Combines original photo + maskCanvas
+// Fast GPU-composited preview — no pixel loop, no PNG encode, runs in <1ms
+function renderFastPreview() {
+  if (!originalCanvas || !maskCanvas) return
+  const canvas = displayCanvasRef.value
+  if (!canvas) return
+  const width = imageDimensions.width
+  const height = imageDimensions.height
+  if (!width || !height) return
+
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+
+  // Step 1: Draw original photo
+  ctx.clearRect(0, 0, width, height)
+  ctx.drawImage(originalCanvas, 0, 0)
+
+  // Step 2: Apply feathered mask using GPU composite ops (no pixel loop!)
+  if (tuning.feather > 0) {
+    const tempMask = document.createElement('canvas')
+    tempMask.width = width
+    tempMask.height = height
+    const tmpCtx = tempMask.getContext('2d')
+    tmpCtx.filter = `blur(${tuning.feather}px)`
+    tmpCtx.drawImage(maskCanvas, 0, 0)
+    ctx.globalCompositeOperation = 'destination-in'
+    ctx.drawImage(tempMask, 0, 0)
+  } else {
+    ctx.globalCompositeOperation = 'destination-in'
+    ctx.drawImage(maskCanvas, 0, 0)
+  }
+  ctx.globalCompositeOperation = 'source-over'
+}
+
+// Schedule a fast preview on the next animation frame (batched to screen refresh)
+function schedulePreview() {
+  if (rAFPending) return
+  rAFPending = true
+  requestAnimationFrame(() => {
+    rAFPending = false
+    renderFastPreview()
+  })
+}
+
+// Canvas Compositing Engine: Full-quality compositing with threshold, trim, de-fringe + PNG export
 function recompositeCanvas() {
   if (!originalCtx || !maskCtx) return
   const width = imageDimensions.width
@@ -362,6 +408,9 @@ function recompositeCanvas() {
       resultUrl.value = URL.createObjectURL(blob)
     }
   }, 'image/png')
+
+  // Also update the fast preview canvas for immediate display
+  renderFastPreview()
 }
 
 // --- INTERACTIVE MAGIC BRUSH ENGINE ---
@@ -389,15 +438,29 @@ function resetBrush() {
   }
 }
 
-// Coordinate mapping from display canvas to original resolution
+// Coordinate mapping: accounts for object-fit:contain letterboxing/pillarboxing
 function getCanvasCoords(e) {
   const target = e.currentTarget
   const rect = target.getBoundingClientRect()
-  const scaleX = imageDimensions.width / rect.width
-  const scaleY = imageDimensions.height / rect.height
+  const imgRatio = imageDimensions.width / imageDimensions.height
+  const contRatio = rect.width / rect.height
+
+  let renderW = rect.width, renderH = rect.height
+  let offsetX = 0, offsetY = 0
+
+  if (imgRatio > contRatio) {
+    // Image is wider — pillarboxed vertically
+    renderH = rect.width / imgRatio
+    offsetY = (rect.height - renderH) / 2
+  } else {
+    // Image is taller — letterboxed horizontally
+    renderW = rect.height * imgRatio
+    offsetX = (rect.width - renderW) / 2
+  }
+
   return {
-    x: (e.clientX - rect.left) * scaleX,
-    y: (e.clientY - rect.top) * scaleY
+    x: ((e.clientX - rect.left) - offsetX) * (imageDimensions.width / renderW),
+    y: ((e.clientY - rect.top) - offsetY) * (imageDimensions.height / renderH)
   }
 }
 
@@ -405,18 +468,55 @@ let lastPoint = null
 
 function onPointerDown(e) {
   if (activeTool.value !== 'brush' || !maskCtx) return
+  e.currentTarget.setPointerCapture(e.pointerId)
   isDrawing.value = true
   lastPoint = getCanvasCoords(e)
-  applyBrushStroke(lastPoint.x, lastPoint.y)
+
+  // Begin a new continuous path on the mask
+  maskCtx.lineCap = 'round'
+  maskCtx.lineJoin = 'round'
+  maskCtx.lineWidth = brushSize.value * 2
+  if (brushMode.value === 'erase') {
+    maskCtx.globalCompositeOperation = 'destination-out'
+    maskCtx.strokeStyle = 'rgba(0, 0, 0, 1)'
+  } else {
+    maskCtx.globalCompositeOperation = 'source-over'
+    maskCtx.strokeStyle = 'rgba(255, 255, 255, 1)'
+  }
+  maskCtx.beginPath()
+  maskCtx.moveTo(lastPoint.x, lastPoint.y)
+
+  // Draw a dot for single-click
+  maskCtx.fillStyle = maskCtx.strokeStyle
+  maskCtx.save()
+  maskCtx.globalCompositeOperation = maskCtx.globalCompositeOperation
+  maskCtx.beginPath()
+  maskCtx.arc(lastPoint.x, lastPoint.y, brushSize.value, 0, Math.PI * 2)
+  maskCtx.fill()
+  maskCtx.restore()
+
+  // Restart path for subsequent lineTo
+  maskCtx.beginPath()
+  maskCtx.moveTo(lastPoint.x, lastPoint.y)
+
+  schedulePreview()
 }
 
 function onPointerMove(e) {
   if (!isDrawing.value || !maskCtx) return
   const currentPoint = getCanvasCoords(e)
-  if (lastPoint) {
-    interpolateStroke(lastPoint, currentPoint)
-  }
+
+  // Native vector path stroke — GPU-accelerated, single draw call
+  maskCtx.lineTo(currentPoint.x, currentPoint.y)
+  maskCtx.stroke()
+
+  // Keep path going for smooth continuous stroke
+  maskCtx.beginPath()
+  maskCtx.moveTo(currentPoint.x, currentPoint.y)
   lastPoint = currentPoint
+
+  // Schedule rAF-batched preview (coalesceses multiple move events per frame)
+  schedulePreview()
 }
 
 function onPointerUp() {
@@ -424,40 +524,9 @@ function onPointerUp() {
     isDrawing.value = false
     lastPoint = null
     saveUndoState()
+    // Full quality PNG export only once, on stroke completion
     recompositeCanvas()
   }
-}
-
-function interpolateStroke(p1, p2) {
-  const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y)
-  const steps = Math.max(1, Math.floor(dist / 4))
-  for (let i = 0; i <= steps; i++) {
-    const x = p1.x + (p2.x - p1.x) * (i / steps)
-    const y = p1.y + (p2.y - p1.y) * (i / steps)
-    applyBrushStroke(x, y)
-  }
-}
-
-function applyBrushStroke(x, y) {
-  if (!maskCtx) return
-  maskCtx.save()
-  maskCtx.beginPath()
-  maskCtx.arc(x, y, brushSize.value, 0, Math.PI * 2)
-
-  if (brushMode.value === 'erase') {
-    maskCtx.globalCompositeOperation = 'destination-out'
-    maskCtx.fillStyle = 'rgba(0, 0, 0, 1)'
-    maskCtx.fill()
-  } else {
-    // Restore
-    maskCtx.globalCompositeOperation = 'source-over'
-    maskCtx.fillStyle = 'rgba(255, 255, 255, 1)'
-    maskCtx.fill()
-  }
-  maskCtx.restore()
-
-  // Live fast preview update
-  recompositeCanvas()
 }
 
 // Event Handlers
@@ -508,12 +577,22 @@ function reset() {
   maskCtx = null
   originalCanvas = null
   originalCtx = null
+  rAFPending = false
   fileName.value = ''
   fileSize.value = ''
   sliderPosition.value = 50
   statusMessage.value = ''
   undoHistory.value = []
 }
+
+// When switching to brush mode, initialize display canvas with current result
+watch(activeTool, (newTool) => {
+  if (newTool === 'brush' && originalCanvas && maskCanvas) {
+    nextTick(() => {
+      renderFastPreview()
+    })
+  }
+})
 
 onMounted(() => {
   checkModelCacheStatus()
@@ -742,14 +821,21 @@ onUnmounted(() => {
 
           <!-- Dynamic Viewport -->
           <div :class="['comparison-viewport', `bg-${previewBg}`, { 'is-brush-active': activeTool === 'brush' }]">
-            <!-- Cutout Result Image (Bottom Layer) -->
+            <!-- Cutout Result Image (Bottom Layer) — hidden during brush mode, canvas takes over -->
             <img
-              v-if="resultUrl"
+              v-if="resultUrl && activeTool !== 'brush'"
               :src="resultUrl"
               alt="Cutout Result"
               class="viewport-img result-img"
               draggable="false"
             />
+
+            <!-- Live GPU-composited display canvas (used during brush mode for real-time preview) -->
+            <canvas
+              v-if="activeTool === 'brush' && resultUrl"
+              ref="displayCanvasRef"
+              class="viewport-img result-img display-canvas"
+            ></canvas>
 
             <!-- MODE 1: Split Comparison Viewport -->
             <template v-if="activeTool === 'slider'">
@@ -1578,6 +1664,11 @@ kbd {
   object-fit: contain;
   pointer-events: none;
   user-select: none;
+}
+
+.display-canvas {
+  image-rendering: auto;
+  touch-action: none;
 }
 
 .clipped-layer {

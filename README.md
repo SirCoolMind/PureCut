@@ -105,6 +105,50 @@ PureCut/
 
 ---
 
+## 🗺️ Roadmap & Future Features
+
+### 🎯 Selection & Detection
+- [ ] **Dotted Cutout Outline** — Marching ants / dashed border animation around the detected subject for visual clarity before confirming the cutout.
+- [ ] **Auto-Detect Categories** — Automatically classify the subject (Human, Animal, Product, Vehicle, Food, etc.) and apply category-optimized AI settings.
+- [ ] **Multi-Subject Detection** — Detect and list all separate subjects in an image; let the user pick which ones to keep or remove individually.
+- [ ] **Polygon / Lasso Selection Tool** — Manual selection tool for precise boundary drawing when AI misses tricky areas.
+- [ ] **Magic Wand (Color-Based Selection)** — Click to select/deselect regions by color similarity, useful for solid-color backgrounds.
+
+### 🖌️ Brush & Editing
+- [ ] **Brush Hardness / Softness Slider** — Adjustable edge falloff on the brush for softer, more natural manual edits.
+- [ ] **Pressure-Sensitive Stylus Support** — Vary brush size/opacity based on pen pressure for tablet users (Wacom, iPad, Surface).
+- [ ] **Visual Undo History Panel** — Thumbnail strip showing each undo state for quick visual comparison and rollback.
+
+### 🖼️ Canvas & Viewport
+- [ ] **Zoom & Pan** — Pinch-to-zoom and scroll-to-zoom with pan for precision brush work on high-resolution images.
+- [ ] **Custom Background Replacement** — Upload or pick a custom photo/color as the new background behind the cutout.
+- [ ] **Multi-Layer Compositing** — Stack multiple cutout subjects onto a single canvas with drag-to-reposition.
+- [ ] **Side-by-Side Multi-View** — Compare cutout results from different models or settings simultaneously.
+
+### 📦 Batch & Workflow
+- [ ] **Batch Processing** — Drag-drop multiple images; process them all sequentially and download as a ZIP archive.
+- [ ] **Preset Export Profiles** — Save and reuse named combinations of tuning settings (e.g., "E-commerce Product", "LinkedIn Headshot").
+- [ ] **Processing Queue with Progress** — Visual queue showing each image's status when batch processing.
+
+### ⚡ Performance & Engine
+- [ ] **WebGPU Shader Post-Processing** — Move the pixel-level threshold/trim/de-fringe loop to a GPU compute shader for instant full-quality renders.
+- [ ] **Web Worker Offloading** — Run heavy compositing in a Web Worker to keep the UI thread always responsive.
+- [ ] **OffscreenCanvas** — Use `OffscreenCanvas` for the display preview to enable hardware-accelerated rendering off the main thread.
+
+### 🚀 Export & Sharing
+- [ ] **Multi-Format Export** — Export as JPEG (with white/custom background fill), WebP (smaller file size), or SVG trace.
+- [ ] **Custom Resolution Export** — Resize the output to specific dimensions (e.g., 1080×1080 for Instagram, 800×800 for e-commerce).
+- [ ] **Direct Social Sharing** — One-click share to Instagram, Twitter/X, or generate a shareable link.
+
+### 📱 Platform & UX
+- [ ] **Progressive Web App (PWA)** — Offline-capable installable app with service worker caching for model weights.
+- [ ] **Keyboard Shortcuts** — `B` for brush, `S` for slider, `[` / `]` to resize brush, `Ctrl+Z` for undo, `Space` to pan.
+- [ ] **Dark / Light Theme Toggle** — User-selectable theme beyond the current dark-slate default.
+- [ ] **Drag-to-Reorder Results Gallery** — Keep a gallery of recent cutouts in the current session for quick re-download.
+- [ ] **Mobile-Optimized Touch UI** — Responsive layout with larger touch targets, gesture controls, and mobile-friendly brush interaction.
+
+---
+
 ## 💡 Notes for Future Conversations & Development
 
 If extending this application in future chats, here are useful entry points:
