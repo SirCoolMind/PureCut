@@ -7,19 +7,36 @@ PureCut is a private, client-side AI tool for removing image backgrounds directl
 ## 🌟 Key Features
 
 - **100% Private & In-Browser**: Images never leave the device. No data is sent to any server or API.
+- **State-of-the-Art BRIA RMBG-1.4 Neural Model (Default)**:
+  - Powered by Transformers.js (`briaai/RMBG-1.4`).
+  - Superior accuracy on difficult real-world photos: fine hair, clothing that camouflages with the background (e.g. grey sweatpants against metal walls), complex poses, and reflective surfaces.
+  - Also includes legacy ISNet models as selectable alternatives.
+- **Interactive Magic Brush (Erase & Restore Tool)**:
+  - 🧹 **Erase Brush**: Allows users to manually swipe away stray reflections, panel seams, or handrails in seconds.
+  - ✨ **Restore Brush**: Paint back any foreground detail that the AI might have accidentally clipped.
+  - 🎚️ **Adjustable Brush Radius**: From 8px to 100px.
+  - ↩️ **Multi-level Undo**: Easily undo brush strokes (`Undo` button).
+  - 🔄 **Reset**: Return to the raw AI mask with 1 click.
+- **Model Cache Status & Preloader**:
+  - Live indicator in navbar: shows whether model is cached locally (`🟢 Cached & Ready`) or not yet downloaded (`⚡ Not Downloaded`).
+  - Pre-download button: allows users to download the ~43 MB model weights ahead of time.
+  - Transparent size indicator with exact percentage during downloads.
+- **Tinkering & Settings (Standard vs Power User)**:
+  - **Standard Mode**: One-click quick presets (*Balanced*, *Fine Hair & Fur*, *Clean Product*, *Deep Background*).
+  - **Power User Mode**: Real-time canvas sliders (Alpha Cutoff Sensitivity, Edge Feather Softness, Edge Shift Trim, De-fringe Color Spill).
+  - **Hardware Accelerator**: WebGPU (Hardware GPU) vs CPU (WASM SIMD Multi-threaded).
+- **Live Hardware Telemetry & Resource Monitor**:
+  - Measures execution duration in seconds and milliseconds.
+  - Measures RAM heap allocation delta and total memory during inference.
+  - Tracks pixel processing throughput ($\text{Megapixels/sec}$).
+  - Displays active CPU logical cores and acceleration engine.
 - **Easy Uploads**:
   - Drag-and-drop images anywhere into the upload card.
   - File picker dialog.
-  - **Clipboard Paste**: Press `Ctrl + V` (or `⌘ + V` on Mac) to paste images copied from the web or clipboard.
-- **Interactive Split Comparison Slider**: Seamlessly inspect the original image vs. the background-removed cutout.
-- **Backdrop Switcher**: Preview the transparent cutout against:
-  - Checkerboard Transparency Grid
-  - Pure White
-  - Deep Dark
-  - Vibrant Gradient
-- **High-Resolution PNG Download**: Preserves the original image dimensions without watermarks or compression limits.
-- **Clipboard Export**: 1-click "Copy Cutout" to copy the transparent PNG directly to your system clipboard.
-- **Image Metadata**: Live display of original image resolution ($W \times H$), file size, and AI inference duration.
+  - **Clipboard Paste**: Press `Ctrl + V` (or `⌘ + V` on Mac) to paste images directly.
+- **Interactive Split Comparison Slider**: Seamlessly inspect the original image vs. the cutout with a custom handle.
+- **Backdrop Switcher**: Preview the transparent cutout against Grid, White, Dark, or Color Gradient.
+- **High-Resolution PNG Download & Clipboard Copy**: Full-resolution PNG download and 1-click clipboard export.
 
 ---
 

@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
     "@imgly/background-removal": "^1.5.7",
     "coi-serviceworker": "^0.1.7",
     "lucide-vue-next": "^0.475.0",
