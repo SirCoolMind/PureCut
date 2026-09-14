@@ -43,6 +43,13 @@ npm run dev
 npm run build
 ```
 
+### Option 3: Deploy to GitHub Pages (Automated)
+This project is pre-configured with GitHub Actions (`.github/workflows/deploy.yml`):
+1. Push this code to your GitHub repository on branch `main`.
+2. In your GitHub repository, go to **Settings** > **Pages**.
+3. Under **Build and deployment** > **Source**, choose **GitHub Actions**.
+4. The workflow will automatically build and deploy PureCut to your GitHub Pages URL!
+
 ---
 
 ## 🧠 How the AI Model Works
