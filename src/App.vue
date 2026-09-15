@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { runRMBG, runISNet, preloadRMBG } from './aiEngine.js'
+import { runRMBG, runISNet, preloadRMBG, resetLoadedModels } from './aiEngine.js'
 import { preload as imglyPreload } from '@imgly/background-removal'
 import {
   UploadCloud,
@@ -22,8 +22,15 @@ import {
   Paintbrush,
   Undo2,
   SplitSquareVertical,
-  Maximize2
+  Maximize2,
+  Trash2,
+  ZoomIn,
+  ZoomOut,
+  Move,
+  Monitor
 } from 'lucide-vue-next'
+import { appVersion, modelOptions } from './constants.js'
+import InfoModal from './components/InfoModal.vue'
 
 // --- State ---
 const originalUrl = ref(null)
@@ -57,14 +64,6 @@ const telemetry = reactive({
   deviceUsed: 'WebGPU (Hardware Accelerated)'
 })
 
-// Model Choices (BRIA RMBG-1.4 is now default & recommended!)
-const modelOptions = [
-  { id: 'briaai/RMBG-1.4', name: 'BRIA RMBG-1.4 (SOTA · Recommended)', size: '43 MB', engine: 'rmbg', desc: 'State-of-the-art accuracy on difficult clothes, hair, reflections, and complex poses.' },
-  { id: 'isnet_quint8', name: 'ISNet Quantized (Fast)', size: '41 MB', engine: 'isnet', desc: 'Fast salient object detector for simple studio backgrounds.' },
-  { id: 'isnet_fp16', name: 'ISNet FP16 (High Precision)', size: '82 MB', engine: 'isnet', desc: 'Higher precision floating-point ISNet model.' },
-  { id: 'isnet', name: 'ISNet FP32 (Full Precision)', size: '170 MB', engine: 'isnet', desc: 'Full precision 32-bit ISNet model.' }
-]
-
 const selectedModel = ref('briaai/RMBG-1.4')
 const selectedDevice = ref('gpu') // 'gpu' | 'cpu'
 const cachedModels = reactive({
@@ -74,15 +73,101 @@ const cachedModels = reactive({
   'isnet': false
 })
 
-// UI Modes
+// UI Modes & Tools
 const userMode = ref('standard') // 'standard' | 'power'
-const activeTool = ref('slider') // 'slider' | 'brush'
+const activeTool = ref('slider') // 'slider' | 'brush' | 'pan'
 const brushMode = ref('erase') // 'erase' | 'restore'
 const brushSize = ref(35)
 const isDrawing = ref(false)
 const brushCanvasRef = ref(null)
 const displayCanvasRef = ref(null) // Live GPU-composited preview canvas
 let rAFPending = false // requestAnimationFrame batching flag
+
+// Zoom & Pan System
+const zoomLevel = ref(1) // 1 = 100%
+const panOffset = reactive({ x: 0, y: 0 })
+const isPanning = ref(false)
+let panStartPoint = { x: 0, y: 0 }
+let initialPan = { x: 0, y: 0 }
+
+function zoomIn() {
+  zoomLevel.value = Math.min(4, +(zoomLevel.value + 0.25).toFixed(2))
+}
+
+function zoomOut() {
+  zoomLevel.value = Math.max(0.5, +(zoomLevel.value - 0.25).toFixed(2))
+  if (zoomLevel.value <= 1 && panOffset.x === 0 && panOffset.y === 0) {
+    resetZoom()
+  }
+}
+
+function resetZoom() {
+  zoomLevel.value = 1
+  panOffset.x = 0
+  panOffset.y = 0
+}
+
+function onWheelZoom(e) {
+  if (!resultUrl.value) return
+  e.preventDefault()
+  const delta = e.deltaY > 0 ? -0.15 : 0.15
+  const newZoom = Math.min(4, Math.max(0.5, +(zoomLevel.value + delta).toFixed(2)))
+  zoomLevel.value = newZoom
+  if (newZoom === 1) {
+    panOffset.x = 0
+    panOffset.y = 0
+  }
+}
+
+function onPanStart(e) {
+  if (activeTool.value !== 'pan') return
+  isPanning.value = true
+  e.currentTarget.setPointerCapture(e.pointerId)
+  panStartPoint = { x: e.clientX, y: e.clientY }
+  initialPan = { x: panOffset.x, y: panOffset.y }
+}
+
+function onPanMove(e) {
+  if (!isPanning.value) return
+  const dx = e.clientX - panStartPoint.x
+  const dy = e.clientY - panStartPoint.y
+  panOffset.x = initialPan.x + dx
+  panOffset.y = initialPan.y + dy
+}
+
+function onPanEnd() {
+  isPanning.value = false
+}
+
+// Browser Page Zoom Detection & Reset State
+const browserZoomLevel = ref(100)
+const isBrowserZoomed = computed(() => browserZoomLevel.value !== 100)
+
+function updateBrowserZoom() {
+  if (typeof window === 'undefined') return
+  let ratio = 1
+  if (window.visualViewport && window.visualViewport.scale && window.visualViewport.scale !== 1) {
+    ratio = window.visualViewport.scale
+  } else if (window.outerWidth && window.innerWidth) {
+    // Zoom in browser scales window.innerWidth relative to outerWidth
+    const calculated = window.outerWidth / window.innerWidth
+    if (Math.abs(calculated - 1) > 0.05) {
+      ratio = calculated
+    }
+  }
+  browserZoomLevel.value = Math.round(ratio * 100)
+}
+
+function resetBrowserZoom() {
+  // If pinch/visual viewport zoomed, reset scroll and notify
+  if (window.visualViewport) {
+    window.scrollTo(0, 0)
+  }
+  // For standard browser zoom, prompt shortcut
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
+  const shortcut = isMac ? 'Cmd + 0' : 'Ctrl + 0'
+  alert(`To reset your browser zoom to 100%, press ${shortcut} on your keyboard.`)
+}
 
 const sliderPosition = ref(50)
 const previewBg = ref('checkerboard') // 'checkerboard', 'white', 'black', 'gradient'
@@ -99,11 +184,87 @@ const tuning = reactive({
   deFringe: true
 })
 
-function checkModelCacheStatus() {
+// Modal State
+const showInfoModal = ref(false)
+
+const cacheUsageBytes = ref(0)
+const isClearingCache = ref(false)
+
+async function checkModelCacheStatus() {
   modelOptions.forEach(m => {
     const isCached = localStorage.getItem(`purecut_cached_${m.id}`) === 'true'
     cachedModels[m.id] = isCached
   })
+
+  // Measure actual browser storage usage if supported
+  if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate) {
+    try {
+      const estimate = await navigator.storage.estimate()
+      cacheUsageBytes.value = estimate.usage || 0
+    } catch (e) {
+      console.warn('Storage estimate failed:', e)
+    }
+  }
+}
+
+const formattedCacheUsage = computed(() => {
+  if (!cacheUsageBytes.value) {
+    const anyCached = Object.values(cachedModels).some(v => v)
+    return anyCached ? '~45 MB' : '0 MB'
+  }
+  return formatBytes(cacheUsageBytes.value)
+})
+
+async function clearAllCache() {
+  if (isClearingCache.value) return
+  const confirmClear = window.confirm('Are you sure you want to clear all downloaded AI models and cached storage? You can re-download them anytime.')
+  if (!confirmClear) return
+
+  isClearingCache.value = true
+  try {
+    // 1. Reset in-memory instances
+    resetLoadedModels()
+
+    // 2. Clear Cache Storage API
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      const cacheNames = await caches.keys()
+      await Promise.all(cacheNames.map(name => caches.delete(name)))
+    }
+
+    // 3. Clear IndexedDB databases used by Transformers.js / ONNX
+    if (typeof window !== 'undefined' && window.indexedDB && window.indexedDB.databases) {
+      try {
+        const dbs = await window.indexedDB.databases()
+        for (const db of dbs) {
+          if (db.name) {
+            window.indexedDB.deleteDatabase(db.name)
+          }
+        }
+      } catch (err) {
+        console.warn('Could not enumerate IndexedDB databases:', err)
+      }
+    }
+
+    // 4. Clear model cache flags in localStorage
+    modelOptions.forEach(m => {
+      localStorage.removeItem(`purecut_cached_${m.id}`)
+      cachedModels[m.id] = false
+    })
+
+    // 5. Update cache size
+    cacheUsageBytes.value = 0
+    await checkModelCacheStatus()
+
+    statusMessage.value = 'Model cache cleared successfully.'
+    setTimeout(() => {
+      if (statusMessage.value === 'Model cache cleared successfully.') statusMessage.value = ''
+    }, 2500)
+  } catch (err) {
+    console.error('Failed to clear cache:', err)
+    alert('An error occurred while clearing cache: ' + (err.message || err))
+  } finally {
+    isClearingCache.value = false
+  }
 }
 
 const currentModelCached = computed(() => !!cachedModels[selectedModel.value])
@@ -120,8 +281,9 @@ async function handlePreload() {
   try {
     if (currentModelMeta.value.engine === 'rmbg') {
       await preloadRMBG((progress) => {
-        if (progress.progress) {
-          const pct = Math.round(progress.progress * 100)
+        if (progress && (progress.progress !== undefined || progress.pct !== undefined)) {
+          const raw = progress.pct !== undefined ? progress.pct : progress.progress
+          const pct = Math.min(100, Math.max(0, Math.round(raw > 1 ? raw : raw * 100)))
           downloadProgress.percent = pct
           statusMessage.value = `Downloading RMBG-1.4 weights: ${pct}%...`
         }
@@ -217,18 +379,23 @@ async function processImage(file) {
       // Run State-of-the-Art BRIA RMBG-1.4
       const result = await runRMBG(file, selectedDevice.value, (p) => {
         if (p.message) statusMessage.value = p.message
-        if (p.progress) downloadProgress.percent = Math.round(p.progress * 100)
+        if (p && (p.progress !== undefined || p.pct !== undefined)) {
+          const raw = p.pct !== undefined ? p.pct : p.progress
+          downloadProgress.percent = Math.min(100, Math.max(0, Math.round(raw > 1 ? raw : raw * 100)))
+        }
       })
       rawMaskBlob = result.maskBlob
     } else {
       // Run ISNet (legacy)
       const result = await runISNet(file, selectedModel.value, selectedDevice.value, (p) => {
         if (p.message) statusMessage.value = p.message
-        if (p.pct) {
+        if (p.pct !== undefined || p.progress !== undefined) {
+          const raw = p.pct !== undefined ? p.pct : p.progress
+          const pct = Math.min(100, Math.max(0, Math.round(raw > 1 ? raw : raw * 100)))
           downloadProgress.isDownloading = true
-          downloadProgress.percent = p.pct
-          downloadProgress.loadedMB = p.loadedMB
-          downloadProgress.totalMB = p.totalMB
+          downloadProgress.percent = pct
+          if (p.loadedMB) downloadProgress.loadedMB = p.loadedMB
+          if (p.totalMB) downloadProgress.totalMB = p.totalMB
         }
       })
       rawMaskBlob = result.maskBlob
@@ -336,87 +503,104 @@ function schedulePreview() {
   })
 }
 
+// Timer for debouncing heavy PNG blob encoding
+let recompositeDebounceTimer = null
+
 // Canvas Compositing Engine: Full-quality compositing with threshold, trim, de-fringe + PNG export
-function recompositeCanvas() {
+function recompositeCanvas(immediateBlob = false) {
   if (!originalCtx || !maskCtx) return
   const width = imageDimensions.width
   const height = imageDimensions.height
   if (!width || !height) return
 
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-
-  // Draw original image
-  ctx.drawImage(originalCanvas, 0, 0)
-  const imgData = ctx.getImageData(0, 0, width, height)
-  const imgPixels = imgData.data
-
-  // Apply feather (blur) if requested
-  const tempMaskCanvas = document.createElement('canvas')
-  tempMaskCanvas.width = width
-  tempMaskCanvas.height = height
-  const tempMaskCtx = tempMaskCanvas.getContext('2d', { willReadFrequently: true })
-  if (tuning.feather > 0) {
-    tempMaskCtx.filter = `blur(${tuning.feather}px)`
-  }
-  tempMaskCtx.drawImage(maskCanvas, 0, 0)
-  const maskData = tempMaskCtx.getImageData(0, 0, width, height)
-  const maskPixels = maskData.data
-
-  const totalPixels = width * height
-  const thresholdVal = tuning.threshold * 255
-  const trimShift = tuning.trim * 15
-
-  for (let i = 0; i < totalPixels; i++) {
-    const idx = i * 4
-    let rawAlpha = maskPixels[idx + 3]
-
-    if (trimShift !== 0) {
-      rawAlpha = Math.max(0, Math.min(255, rawAlpha - trimShift))
-    }
-
-    let finalAlpha = 0
-    if (rawAlpha >= thresholdVal) {
-      const range = 255 - thresholdVal
-      finalAlpha = range > 0 ? Math.min(255, Math.round(((rawAlpha - thresholdVal) / range) * 255)) : 255
-    } else {
-      finalAlpha = 0
-    }
-
-    imgPixels[idx + 3] = finalAlpha
-
-    // De-fringe color halo
-    if (tuning.deFringe && finalAlpha > 0 && finalAlpha < 220) {
-      const r = imgPixels[idx]
-      const g = imgPixels[idx + 1]
-      const b = imgPixels[idx + 2]
-      const avg = (r + g + b) / 3
-      imgPixels[idx] = Math.round(r * 0.85 + avg * 0.15)
-      imgPixels[idx + 1] = Math.round(g * 0.85 + avg * 0.15)
-      imgPixels[idx + 2] = Math.round(b * 0.85 + avg * 0.15)
-    }
-  }
-
-  ctx.putImageData(imgData, 0, 0)
-
-  canvas.toBlob((blob) => {
-    if (blob) {
-      resultBlob.value = blob
-      if (resultUrl.value) URL.revokeObjectURL(resultUrl.value)
-      resultUrl.value = URL.createObjectURL(blob)
-    }
-  }, 'image/png')
-
-  // Also update the fast preview canvas for immediate display
+  // 1. Immediately update fast GPU preview (<1ms) so the UI responds instantly
   renderFastPreview()
+
+  // 2. Debounce heavy full-resolution pixel loop and PNG toBlob encoding
+  if (recompositeDebounceTimer) {
+    clearTimeout(recompositeDebounceTimer)
+    recompositeDebounceTimer = null
+  }
+
+  const runHeavyExport = () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+
+    // Draw original image
+    ctx.drawImage(originalCanvas, 0, 0)
+    const imgData = ctx.getImageData(0, 0, width, height)
+    const imgPixels = imgData.data
+
+    // Apply feather (blur) if requested
+    const tempMaskCanvas = document.createElement('canvas')
+    tempMaskCanvas.width = width
+    tempMaskCanvas.height = height
+    const tempMaskCtx = tempMaskCanvas.getContext('2d', { willReadFrequently: true })
+    if (tuning.feather > 0) {
+      tempMaskCtx.filter = `blur(${tuning.feather}px)`
+    }
+    tempMaskCtx.drawImage(maskCanvas, 0, 0)
+    const maskData = tempMaskCtx.getImageData(0, 0, width, height)
+    const maskPixels = maskData.data
+
+    const totalPixels = width * height
+    const thresholdVal = tuning.threshold * 255
+    const trimShift = tuning.trim * 15
+
+    for (let i = 0; i < totalPixels; i++) {
+      const idx = i * 4
+      let rawAlpha = maskPixels[idx + 3]
+
+      if (trimShift !== 0) {
+        rawAlpha = Math.max(0, Math.min(255, rawAlpha - trimShift))
+      }
+
+      let finalAlpha = 0
+      if (rawAlpha >= thresholdVal) {
+        const range = 255 - thresholdVal
+        finalAlpha = range > 0 ? Math.min(255, Math.round(((rawAlpha - thresholdVal) / range) * 255)) : 255
+      } else {
+        finalAlpha = 0
+      }
+
+      imgPixels[idx + 3] = finalAlpha
+
+      // De-fringe color halo
+      if (tuning.deFringe && finalAlpha > 0 && finalAlpha < 220) {
+        const r = imgPixels[idx]
+        const g = imgPixels[idx + 1]
+        const b = imgPixels[idx + 2]
+        const avg = (r + g + b) / 3
+        imgPixels[idx] = Math.round(r * 0.85 + avg * 0.15)
+        imgPixels[idx + 1] = Math.round(g * 0.85 + avg * 0.15)
+        imgPixels[idx + 2] = Math.round(b * 0.85 + avg * 0.15)
+      }
+    }
+
+    ctx.putImageData(imgData, 0, 0)
+
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resultBlob.value = blob
+        if (resultUrl.value) URL.revokeObjectURL(resultUrl.value)
+        resultUrl.value = URL.createObjectURL(blob)
+      }
+    }, 'image/png')
+  }
+
+  if (immediateBlob) {
+    runHeavyExport()
+  } else {
+    recompositeDebounceTimer = setTimeout(runHeavyExport, 120)
+  }
 }
 
 // --- INTERACTIVE MAGIC BRUSH ENGINE ---
 function saveUndoState() {
   if (!maskCtx) return
-  if (undoHistory.value.length > 8) undoHistory.value.shift()
+  if (undoHistory.value.length > 15) undoHistory.value.shift()
   const snapshot = maskCtx.getImageData(0, 0, imageDimensions.width, imageDimensions.height)
   undoHistory.value.push(snapshot)
 }
@@ -426,7 +610,7 @@ function handleUndo() {
   undoHistory.value.pop() // remove current state
   const previousState = undoHistory.value[undoHistory.value.length - 1]
   maskCtx.putImageData(previousState, 0, 0)
-  recompositeCanvas()
+  recompositeCanvas(true)
 }
 
 function resetBrush() {
@@ -434,33 +618,52 @@ function resetBrush() {
     const originalState = undoHistory.value[0]
     maskCtx.putImageData(originalState, 0, 0)
     undoHistory.value = [originalState]
-    recompositeCanvas()
+    recompositeCanvas(true)
   }
 }
 
-// Coordinate mapping: accounts for object-fit:contain letterboxing/pillarboxing
+// Coordinate mapping: accurately maps pointer events from the transformed container to exact canvas pixels
 function getCanvasCoords(e) {
-  const target = e.currentTarget
-  const rect = target.getBoundingClientRect()
+  // Use the enclosing viewport for the true unscaled container boundary
+  const viewport = e.currentTarget.closest('.comparison-viewport')
+  const viewportRect = viewport ? viewport.getBoundingClientRect() : e.currentTarget.getBoundingClientRect()
+  
+  const containerW = viewportRect.width
+  const containerH = viewportRect.height
   const imgRatio = imageDimensions.width / imageDimensions.height
-  const contRatio = rect.width / rect.height
+  const contRatio = containerW / containerH
 
-  let renderW = rect.width, renderH = rect.height
+  let renderW = containerW, renderH = containerH
   let offsetX = 0, offsetY = 0
 
   if (imgRatio > contRatio) {
     // Image is wider — pillarboxed vertically
-    renderH = rect.width / imgRatio
-    offsetY = (rect.height - renderH) / 2
+    renderH = containerW / imgRatio
+    offsetY = (containerH - renderH) / 2
   } else {
     // Image is taller — letterboxed horizontally
-    renderW = rect.height * imgRatio
-    offsetX = (rect.width - renderW) / 2
+    renderW = containerH * imgRatio
+    offsetX = (containerW - renderW) / 2
   }
 
+  // Pointer position relative to viewport center
+  const centerRelX = (e.clientX - viewportRect.left) - containerW / 2
+  const centerRelY = (e.clientY - viewportRect.top) - containerH / 2
+
+  // Invert CSS transforms (panOffset and zoomLevel centered at 50% 50%)
+  const unzoomedCenterX = (centerRelX - panOffset.x) / zoomLevel.value
+  const unzoomedCenterY = (centerRelY - panOffset.y) / zoomLevel.value
+
+  const unzoomedX = unzoomedCenterX + containerW / 2
+  const unzoomedY = unzoomedCenterY + containerH / 2
+
+  // Map from unzoomed image layout box to original image pixel coordinates
+  const pixelX = (unzoomedX - offsetX) * (imageDimensions.width / renderW)
+  const pixelY = (unzoomedY - offsetY) * (imageDimensions.height / renderH)
+
   return {
-    x: ((e.clientX - rect.left) - offsetX) * (imageDimensions.width / renderW),
-    y: ((e.clientY - rect.top) - offsetY) * (imageDimensions.height / renderH)
+    x: Math.max(0, Math.min(imageDimensions.width, pixelX)),
+    y: Math.max(0, Math.min(imageDimensions.height, pixelY))
   }
 }
 
@@ -578,6 +781,7 @@ function reset() {
   originalCanvas = null
   originalCtx = null
   rAFPending = false
+  resetZoom()
   fileName.value = ''
   fileSize.value = ''
   sliderPosition.value = 50
@@ -597,10 +801,19 @@ watch(activeTool, (newTool) => {
 onMounted(() => {
   checkModelCacheStatus()
   window.addEventListener('paste', onPaste)
+  updateBrowserZoom()
+  window.addEventListener('resize', updateBrowserZoom)
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', updateBrowserZoom)
+  }
 })
 
 onUnmounted(() => {
   window.removeEventListener('paste', onPaste)
+  window.removeEventListener('resize', updateBrowserZoom)
+  if (window.visualViewport) {
+    window.visualViewport.removeEventListener('resize', updateBrowserZoom)
+  }
 })
 </script>
 
@@ -612,7 +825,12 @@ onUnmounted(() => {
         <div class="brand-icon">
           <Sparkles :size="18" />
         </div>
-        <span class="brand-name">Pure<span>Cut</span></span>
+        <div class="brand-title">
+          <span class="brand-name">Pure<span>Cut</span></span>
+          <button class="version-badge" @click="showInfoModal = true" title="Version, Changelog & Roadmap">
+            v{{ appVersion }}
+          </button>
+        </div>
       </div>
 
       <!-- Center: Model Status & Preload Pill -->
@@ -634,22 +852,50 @@ onUnmounted(() => {
           <RefreshCw :size="11" :class="{ spin: isPreloading }" />
           {{ isPreloading ? 'Preloading...' : 'Preload' }}
         </button>
+
+        <!-- Cache storage size indicator & clear cache trigger -->
+        <div class="cache-status-pill" :title="`Total AI model storage used: ${formattedCacheUsage}`">
+          <HardDrive :size="11" />
+          <span>{{ formattedCacheUsage }}</span>
+          <button
+            class="btn-clear-cache"
+            :disabled="isClearingCache || isProcessing"
+            @click="clearAllCache"
+            title="Clear downloaded AI models & storage cache"
+          >
+            <Trash2 :size="11" :class="{ spin: isClearingCache }" />
+            {{ isClearingCache ? 'Clearing...' : 'Clear' }}
+          </button>
+        </div>
       </div>
 
-      <!-- Right: Mode Switcher -->
-      <div class="mode-toggle-group">
+      <!-- Right: Browser Zoom Reset & Mode Switcher -->
+      <div class="navbar-right-actions">
         <button
-          :class="['mode-btn', { active: userMode === 'standard' }]"
-          @click="userMode = 'standard'"
+          v-if="isBrowserZoomed"
+          class="btn-browser-zoom"
+          @click="resetBrowserZoom"
+          :title="`Browser zoom is ${browserZoomLevel}%. Click to reset.`"
         >
-          Standard
+          <Monitor :size="12" />
+          <span>Page {{ browserZoomLevel }}%</span>
+          <RotateCcw :size="11" />
         </button>
-        <button
-          :class="['mode-btn', { active: userMode === 'power' }]"
-          @click="userMode = 'power'"
-        >
-          <Wrench :size="12" /> Power User
-        </button>
+
+        <div class="mode-toggle-group">
+          <button
+            :class="['mode-btn', { active: userMode === 'standard' }]"
+            @click="userMode = 'standard'"
+          >
+            Standard
+          </button>
+          <button
+            :class="['mode-btn', { active: userMode === 'power' }]"
+            @click="userMode = 'power'"
+          >
+            <Wrench :size="12" /> Power User
+          </button>
+        </div>
       </div>
     </header>
 
@@ -700,16 +946,6 @@ onUnmounted(() => {
 
           <div class="paste-hint">
             or press <kbd>Ctrl</kbd> + <kbd>V</kbd> anywhere to paste from clipboard
-          </div>
-
-          <!-- Model Notice in Dropzone -->
-          <div class="model-notice-pill">
-            <span v-if="currentModelCached" class="cached-text">
-              🟢 {{ currentModelMeta.name.split(' ')[0] }} is cached locally. Removal starts immediately.
-            </span>
-            <span v-else class="uncached-text">
-              ⚡ First upload downloads the AI weights ({{ currentModelMeta.size }}) once into browser cache.
-            </span>
           </div>
         </div>
       </section>
@@ -768,7 +1004,7 @@ onUnmounted(() => {
               <span class="tag">{{ fileSize }}</span>
             </div>
 
-            <!-- Tool Switcher: Compare Slider vs Magic Brush -->
+            <!-- Tool Switcher: Compare Slider vs Magic Brush vs Pan -->
             <div class="tool-switch-bar">
               <button
                 :class="['tool-btn', { active: activeTool === 'slider' }]"
@@ -783,6 +1019,13 @@ onUnmounted(() => {
                 title="Erase or Restore Brush"
               >
                 <Paintbrush :size="14" /> Magic Brush
+              </button>
+              <button
+                :class="['tool-btn', { active: activeTool === 'pan' }]"
+                @click="activeTool = 'pan'"
+                title="Drag to Pan canvas"
+              >
+                <Move :size="14" /> Pan
               </button>
             </div>
 
@@ -819,77 +1062,124 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- Dynamic Viewport -->
-          <div :class="['comparison-viewport', `bg-${previewBg}`, { 'is-brush-active': activeTool === 'brush' }]">
-            <!-- Cutout Result Image (Bottom Layer) — hidden during brush mode, canvas takes over -->
-            <img
-              v-if="resultUrl && activeTool !== 'brush'"
-              :src="resultUrl"
-              alt="Cutout Result"
-              class="viewport-img result-img"
-              draggable="false"
-            />
-
-            <!-- Live GPU-composited display canvas (used during brush mode for real-time preview) -->
-            <canvas
-              v-if="activeTool === 'brush' && resultUrl"
-              ref="displayCanvasRef"
-              class="viewport-img result-img display-canvas"
-            ></canvas>
-
-            <!-- MODE 1: Split Comparison Viewport -->
-            <template v-if="activeTool === 'slider'">
-              <!-- Original Layer (Clipped Top) -->
-              <div
-                class="clipped-layer"
-                :style="{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }"
+          <!-- Dynamic Viewport with Wheel Zoom & Pan Support -->
+          <div
+            :class="['comparison-viewport', `bg-${previewBg}`, { 'is-brush-active': activeTool === 'brush', 'is-panning': isPanning, 'tool-pan': activeTool === 'pan' }]"
+            @wheel="onWheelZoom"
+          >
+            <!-- Zoom & Pan Floating Controls -->
+            <div class="zoom-floating-toolbar">
+              <button
+                v-if="zoomLevel !== 1 || panOffset.x !== 0 || panOffset.y !== 0"
+                class="zoom-btn reset-btn"
+                @click="resetZoom"
+                title="Reset Zoom & Pan"
               >
-                <img
-                  :src="originalUrl"
-                  alt="Original Image"
-                  class="viewport-img original-img"
-                  draggable="false"
-                />
-              </div>
+                <RotateCcw :size="12" /> Reset
+              </button>
+              <button class="zoom-btn" @click="zoomIn" title="Zoom In (+25%)">
+                <ZoomIn :size="13" />
+              </button>
+              <button
+                class="zoom-level-badge"
+                @click="resetZoom"
+                :title="zoomLevel !== 1 || panOffset.x !== 0 || panOffset.y !== 0 ? 'Click to Reset Zoom & Position' : '100% Zoom'"
+              >
+                {{ Math.round(zoomLevel * 100) }}%
+              </button>
+              <button class="zoom-btn" @click="zoomOut" title="Zoom Out (-25%)">
+                <ZoomOut :size="13" />
+              </button>
+            </div>
 
-              <!-- Badges -->
-              <div class="badge-tag before-badge" :style="{ opacity: sliderPosition > 15 ? 1 : 0 }">
-                Original
-              </div>
-              <div class="badge-tag after-badge" :style="{ opacity: sliderPosition < 85 ? 1 : 0 }">
-                Cutout
-              </div>
-
-              <!-- Divider Slider Handle -->
-              <div class="slider-divider" :style="{ left: `${sliderPosition}%` }">
-                <div class="slider-thumb">
-                  <span>◀ ▶</span>
-                </div>
-              </div>
-
-              <!-- Range Overlay for drag interaction -->
-              <input
-                type="range"
-                min="0"
-                max="100"
-                v-model="sliderPosition"
-                class="range-overlay"
-                aria-label="Before/After Split Slider"
+            <!-- Scalable & Pannable Stage Surface Container -->
+            <div
+              class="viewport-transform-layer"
+              :style="{
+                transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
+                transformOrigin: 'center center'
+              }"
+            >
+              <!-- Cutout Result Image (Bottom Layer) — hidden during brush mode, canvas takes over -->
+              <img
+                v-if="resultUrl && activeTool !== 'brush'"
+                :src="resultUrl"
+                alt="Cutout Result"
+                class="viewport-img result-img"
+                draggable="false"
               />
-            </template>
 
-            <!-- MODE 2: Magic Brush Interactive Painting Layer -->
-            <template v-else>
-              <div
-                class="brush-interaction-surface"
-                @pointerdown="onPointerDown"
-                @pointermove="onPointerMove"
-                @pointerup="onPointerUp"
-                @pointerleave="onPointerUp"
-              >
-                <div class="brush-cursor-guide"></div>
-              </div>
-            </template>
+              <!-- Live GPU-composited display canvas (used during brush mode for real-time preview) -->
+              <canvas
+                v-if="activeTool === 'brush' && resultUrl"
+                ref="displayCanvasRef"
+                class="viewport-img result-img display-canvas"
+              ></canvas>
+
+              <!-- MODE 1: Split Comparison Viewport -->
+              <template v-if="activeTool === 'slider'">
+                <!-- Original Layer (Clipped Top) -->
+                <div
+                  class="clipped-layer"
+                  :style="{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }"
+                >
+                  <img
+                    :src="originalUrl"
+                    alt="Original Image"
+                    class="viewport-img original-img"
+                    draggable="false"
+                  />
+                </div>
+
+                <!-- Badges -->
+                <div class="badge-tag before-badge" :style="{ opacity: sliderPosition > 15 ? 1 : 0 }">
+                  Original
+                </div>
+                <div class="badge-tag after-badge" :style="{ opacity: sliderPosition < 85 ? 1 : 0 }">
+                  Cutout
+                </div>
+
+                <!-- Divider Slider Handle -->
+                <div class="slider-divider" :style="{ left: `${sliderPosition}%` }">
+                  <div class="slider-thumb">
+                    <span>◀ ▶</span>
+                  </div>
+                </div>
+
+                <!-- Range Overlay for drag interaction -->
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  v-model="sliderPosition"
+                  class="range-overlay"
+                  aria-label="Before/After Split Slider"
+                />
+              </template>
+
+              <!-- MODE 2: Magic Brush Interactive Painting Layer -->
+              <template v-else-if="activeTool === 'brush'">
+                <div
+                  class="brush-interaction-surface"
+                  @pointerdown="onPointerDown"
+                  @pointermove="onPointerMove"
+                  @pointerup="onPointerUp"
+                  @pointerleave="onPointerUp"
+                >
+                  <div class="brush-cursor-guide"></div>
+                </div>
+              </template>
+            </div>
+
+            <!-- Pan Drag Overlay when activeTool === 'pan' -->
+            <div
+              v-if="activeTool === 'pan'"
+              class="pan-interaction-surface"
+              @pointerdown="onPanStart"
+              @pointermove="onPanMove"
+              @pointerup="onPanEnd"
+              @pointerleave="onPanEnd"
+            ></div>
           </div>
 
           <!-- Stage Footer: Hint & Actions -->
@@ -1108,6 +1398,17 @@ onUnmounted(() => {
         </aside>
       </section>
     </main>
+
+    <!-- Version / Changelog / Roadmap / Storage Modal -->
+    <InfoModal
+      :show="showInfoModal"
+      :formatted-cache-usage="formattedCacheUsage"
+      :cached-models="cachedModels"
+      :is-clearing-cache="isClearingCache"
+      :is-processing="isProcessing"
+      @close="showInfoModal = false"
+      @clear-cache="clearAllCache"
+    />
   </div>
 </template>
 
@@ -1172,10 +1473,20 @@ html, body {
   box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
 }
 
+.brand-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1;
+}
+
 .brand-name {
   font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.5px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 
 .brand-name span {
@@ -1235,6 +1546,72 @@ html, body {
 
 .btn-preload:hover:not(:disabled) {
   background: rgba(99, 102, 241, 0.35);
+}
+
+.cache-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 9999px;
+  font-size: 10.5px;
+  color: #94a3b8;
+  margin-left: 2px;
+}
+
+.btn-clear-cache {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 1px 6px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-clear-cache:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.3);
+  color: #fee2e2;
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.btn-clear-cache:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.navbar-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-browser-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  padding: 3px 9px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-browser-zoom:hover {
+  background: rgba(245, 158, 11, 0.25);
+  color: #fde68a;
+  border-color: rgba(245, 158, 11, 0.5);
 }
 
 /* Mode Switcher */
@@ -1669,6 +2046,109 @@ kbd {
 .display-canvas {
   image-rendering: auto;
   touch-action: none;
+}
+
+/* Transform container for zoom and pan */
+.viewport-transform-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.06s cubic-bezier(0.2, 0, 0, 1);
+  will-change: transform;
+}
+
+.comparison-viewport.is-panning .viewport-transform-layer,
+.comparison-viewport.is-brush-active .viewport-transform-layer {
+  transition: none;
+}
+
+/* Floating Zoom Toolbar */
+.zoom-floating-toolbar {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  padding: 3px 5px;
+  z-index: 30;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: #cbd5e1;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.zoom-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.zoom-btn.reset-btn {
+  width: auto;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  gap: 4px;
+  background: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  margin-right: 2px;
+}
+
+.zoom-btn.reset-btn:hover {
+  background: rgba(99, 102, 241, 0.35);
+  color: #c7d2fe;
+}
+
+.zoom-level-badge {
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  font-weight: 700;
+  color: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  letter-spacing: 0.2px;
+  transition: all 0.15s;
+}
+
+.zoom-level-badge:hover {
+  color: #818cf8;
+  background: rgba(99, 102, 241, 0.15);
+}
+
+/* Pan Interaction Layer */
+.pan-interaction-surface {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  z-index: 26;
+  touch-action: none;
+}
+
+.comparison-viewport.is-panning .pan-interaction-surface,
+.pan-interaction-surface:active {
+  cursor: grabbing;
 }
 
 .clipped-layer {
@@ -2108,5 +2588,31 @@ kbd {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* Version Badge in Navbar */
+.version-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  padding: 3px 7px 1px 7px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 0.3px;
+  height: 19px;
+  box-sizing: border-box;
+}
+
+.version-badge:hover {
+  background: rgba(99, 102, 241, 0.3);
+  color: #c7d2fe;
+  border-color: rgba(99, 102, 241, 0.5);
 }
 </style>

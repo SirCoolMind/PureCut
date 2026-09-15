@@ -14,6 +14,14 @@ let rmbgModel = null;
 let rmbgProcessor = null;
 
 /**
+ * Clear in-memory cached model instances
+ */
+export function resetLoadedModels() {
+  rmbgModel = null;
+  rmbgProcessor = null;
+}
+
+/**
  * Preload RMBG-1.4 model
  */
 export async function preloadRMBG(onProgress) {

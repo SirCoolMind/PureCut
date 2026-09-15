@@ -17,10 +17,14 @@ PureCut is a private, client-side AI tool for removing image backgrounds directl
   - 🎚️ **Adjustable Brush Radius**: From 8px to 100px.
   - ↩️ **Multi-level Undo**: Easily undo brush strokes (`Undo` button).
   - 🔄 **Reset**: Return to the raw AI mask with 1 click.
-- **Model Cache Status & Preloader**:
+- **Model Cache Status & Storage Manager**:
   - Live indicator in navbar: shows whether model is cached locally (`🟢 Cached & Ready`) or not yet downloaded (`⚡ Not Downloaded`).
-  - Pre-download button: allows users to download the ~43 MB model weights ahead of time.
-  - Transparent size indicator with exact percentage during downloads.
+  - **Live Storage Meter**: Shows real-time disk/browser storage used by cached models (e.g. `44.8 MB`).
+  - **1-Click Clear Cache**: Purges all on-device cached AI weights from `CacheStorage` and `IndexedDB` with instant UI status refresh.
+  - Pre-download button: allows users to download model weights ahead of time.
+- **In-App Version, Changelog & Roadmap Dialog**:
+  - Clickable `v1.1.0` badge in navbar opening a dedicated popup modal.
+  - Tabs for **Changelog**, **Roadmap**, **About**, and dedicated **Storage & Cache** inspector.
 - **Tinkering & Settings (Standard vs Power User)**:
   - **Standard Mode**: One-click quick presets (*Balanced*, *Fine Hair & Fur*, *Clean Product*, *Deep Background*).
   - **Power User Mode**: Real-time canvas sliders (Alpha Cutoff Sensitivity, Edge Feather Softness, Edge Shift Trim, De-fringe Color Spill).
