@@ -13,7 +13,8 @@ export const changelog = [
     date: '2026-09-15',
     tag: 'Latest',
     changes: [
-      { type: 'new', text: 'Dotted "Marching Ants" Marquee Selection Tool: Rectangle and Freehand Lasso modes' },
+      { type: 'new', text: 'Smart Magnetic Lasso: Snaps marching ants automatically to detected object contours' },
+      { type: 'new', text: 'Dotted "Marching Ants" Marquee Selection Tool: Magnetic, Freehand Lasso, and Rectangle modes' },
       { type: 'new', text: 'Instant Region Erase & Restore: 1-click cutout manipulation for enclosed regions with Delete/Enter key support' },
       { type: 'fix', text: 'Fixed brush coordinate offset on zoomed, panned, and letterboxed viewports' },
       { type: 'perf', text: 'Debounced high-res PNG blob rendering with instant GPU preview on Undo/Reset' },

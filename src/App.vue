@@ -29,7 +29,8 @@ import {
   Move,
   Monitor,
   BoxSelect,
-  Lasso
+  Lasso,
+  Magnet
 } from 'lucide-vue-next'
 import { appVersion, modelOptions } from './constants.js'
 import InfoModal from './components/InfoModal.vue'
@@ -87,7 +88,7 @@ const selectionCanvasRef = ref(null) // Dotted marching ants selection overlay
 let rAFPending = false // requestAnimationFrame batching flag
 
 // Selection (Marching Ants) Tool System
-const selectShape = ref('rect') // 'rect' | 'lasso'
+const selectShape = ref('magnetic') // 'magnetic' | 'lasso' | 'rect'
 const isSelecting = ref(false)
 const selectionBox = reactive({ startX: 0, startY: 0, currentX: 0, currentY: 0 })
 const lassoPoints = ref([])
@@ -842,11 +843,68 @@ function stopAntsAnimation() {
   }
 }
 
+// Edge-detection snapping function for Magnetic Lasso
+function findNearestObjectEdge(x, y, searchRadius = 18) {
+  if (!maskCtx) return { x, y }
+  const w = imageDimensions.width
+  const h = imageDimensions.height
+
+  // Sample a local bounding patch around (x, y)
+  const x0 = Math.max(0, Math.floor(x - searchRadius))
+  const y0 = Math.max(0, Math.floor(y - searchRadius))
+  const x1 = Math.min(w - 1, Math.ceil(x + searchRadius))
+  const y1 = Math.min(h - 1, Math.ceil(y + searchRadius))
+  const patchW = x1 - x0 + 1
+  const patchH = y1 - y0 + 1
+  if (patchW <= 2 || patchH <= 2) return { x, y }
+
+  const patch = maskCtx.getImageData(x0, y0, patchW, patchH).data
+
+  let bestX = x
+  let bestY = y
+  let maxScore = -1
+
+  // Scan pixels in the patch to find high-gradient mask transitions (alpha ~ 128 or sharp delta)
+  const step = 2 // sample every 2px for high performance
+  for (let py = 1; py < patchH - 1; py += step) {
+    for (let px = 1; px < patchW - 1; px += step) {
+      const idx = (py * patchW + px) * 4 + 3 // alpha channel of mask
+      const a = patch[idx]
+
+      // Alpha gradient magnitude (Sobel / central differences)
+      const aRight = patch[(py * patchW + (px + 1)) * 4 + 3]
+      const aLeft = patch[(py * patchW + (px - 1)) * 4 + 3]
+      const aDown = patch[((py + 1) * patchW + px) * 4 + 3]
+      const aUp = patch[((py - 1) * patchW + px) * 4 + 3]
+
+      const gx = Math.abs(aRight - aLeft)
+      const gy = Math.abs(aDown - aUp)
+      const gradient = gx + gy
+
+      // Transition score: combination of edge gradient and distance to cursor
+      if (gradient > 25) {
+        const curPxX = x0 + px
+        const curPxY = y0 + py
+        const dist = Math.hypot(curPxX - x, curPxY - y)
+        // Score favors strong gradients closer to the cursor
+        const score = gradient / (1 + dist * 0.7)
+        if (score > maxScore) {
+          maxScore = score
+          bestX = curPxX
+          bestY = curPxY
+        }
+      }
+    }
+  }
+
+  return { x: bestX, y: bestY }
+}
+
 // Selection Pointer Handlers
 function onSelectPointerDown(e) {
   if (activeTool.value !== 'select') return
   e.currentTarget.setPointerCapture(e.pointerId)
-  const coords = getCanvasCoords(e)
+  let coords = getCanvasCoords(e)
 
   isSelecting.value = true
   if (selectShape.value === 'rect') {
@@ -856,6 +914,9 @@ function onSelectPointerDown(e) {
     selectionBox.currentY = coords.y
     activeSelection.value = null
   } else {
+    if (selectShape.value === 'magnetic') {
+      coords = findNearestObjectEdge(coords.x, coords.y, 24)
+    }
     lassoPoints.value = [coords]
     activeSelection.value = null
   }
@@ -864,16 +925,21 @@ function onSelectPointerDown(e) {
 
 function onSelectPointerMove(e) {
   if (!isSelecting.value) return
-  const coords = getCanvasCoords(e)
+  let coords = getCanvasCoords(e)
 
   if (selectShape.value === 'rect') {
     selectionBox.currentX = coords.x
     selectionBox.currentY = coords.y
   } else {
+    // If magnetic snapping is active, snap coords to the nearest subject contour
+    if (selectShape.value === 'magnetic') {
+      coords = findNearestObjectEdge(coords.x, coords.y, 22)
+    }
+
     const pts = lassoPoints.value
     const last = pts[pts.length - 1]
     const dist = Math.hypot(coords.x - last.x, coords.y - last.y)
-    if (dist >= 3) {
+    if (dist >= (selectShape.value === 'magnetic' ? 4 : 3)) {
       lassoPoints.value.push(coords)
     }
   }
@@ -1487,18 +1553,25 @@ onUnmounted(() => {
               <div v-else-if="activeTool === 'select'" class="select-toolbar">
                 <div class="brush-mode-pills">
                   <button
-                    :class="['b-pill', { active: selectShape === 'rect' }]"
-                    @click="selectShape = 'rect'; clearSelection()"
-                    title="Rectangle Marquee"
+                    :class="['b-pill', { active: selectShape === 'magnetic' }]"
+                    @click="selectShape = 'magnetic'; clearSelection()"
+                    title="Smart Magnetic Lasso: Snaps to detected object contours"
                   >
-                    <BoxSelect :size="12" /> Rectangle
+                    <Magnet :size="12" /> Magnetic Lasso
                   </button>
                   <button
                     :class="['b-pill', { active: selectShape === 'lasso' }]"
                     @click="selectShape = 'lasso'; clearSelection()"
                     title="Freehand Lasso Selection"
                   >
-                    <Lasso :size="12" /> Lasso
+                    <Lasso :size="12" /> Freehand
+                  </button>
+                  <button
+                    :class="['b-pill', { active: selectShape === 'rect' }]"
+                    @click="selectShape = 'rect'; clearSelection()"
+                    title="Rectangle Marquee"
+                  >
+                    <BoxSelect :size="12" /> Rectangle
                   </button>
                 </div>
 
@@ -1527,7 +1600,9 @@ onUnmounted(() => {
                   </button>
                 </div>
                 <span v-else class="select-hint">
-                  Draw an area with marching ants to erase or restore
+                  <span v-if="selectShape === 'magnetic'">🧲 Draw around any object — line snaps automatically to its detected edge</span>
+                  <span v-else-if="selectShape === 'lasso'">✏️ Draw freehand selection around any area</span>
+                  <span v-else>⬚ Drag a rectangle box around any area</span>
                 </span>
               </div>
               <span v-else-if="activeTool === 'pan'" class="slider-hint">
