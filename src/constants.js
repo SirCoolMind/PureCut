@@ -1,4 +1,4 @@
-﻿export const appVersion = '1.2.0'
+export const appVersion = '1.3.0'
 
 export const modelOptions = [
   { id: 'briaai/RMBG-1.4', name: 'BRIA RMBG-1.4 (SOTA · Recommended)', size: '43 MB', engine: 'rmbg', desc: 'State-of-the-art accuracy on difficult clothes, hair, reflections, and complex poses.' },
@@ -9,9 +9,22 @@ export const modelOptions = [
 
 export const changelog = [
   {
-    version: '1.2.0',
+    version: '1.3.0',
     date: '2026-09-15',
     tag: 'Latest',
+    changes: [
+      { type: 'new', text: 'Dotted "Marching Ants" Marquee Selection Tool: Rectangle and Freehand Lasso modes' },
+      { type: 'new', text: 'Instant Region Erase & Restore: 1-click cutout manipulation for enclosed regions with Delete/Enter key support' },
+      { type: 'fix', text: 'Fixed brush coordinate offset on zoomed, panned, and letterboxed viewports' },
+      { type: 'perf', text: 'Debounced high-res PNG blob rendering with instant GPU preview on Undo/Reset' },
+      { type: 'fix', text: 'Fixed model download progress percentage overflow glitch (10000% bug)' },
+      { type: 'new', text: 'Browser/Page zoom indicator and reset assistance in top bar' }
+    ]
+  },
+  {
+    version: '1.2.0',
+    date: '2026-09-15',
+    tag: 'Previous',
     changes: [
       { type: 'new', text: 'Interactive Zoom & Pan engine: Mouse wheel zoom, Pan drag tool, Zoom In/Out & Reset Zoom controls' },
       { type: 'perf', text: 'Modularized codebase: Extracted InfoModal & data constants reducing App.vue lines and token footprint' },

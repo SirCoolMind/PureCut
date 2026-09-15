@@ -27,7 +27,9 @@ import {
   ZoomIn,
   ZoomOut,
   Move,
-  Monitor
+  Monitor,
+  BoxSelect,
+  Lasso
 } from 'lucide-vue-next'
 import { appVersion, modelOptions } from './constants.js'
 import InfoModal from './components/InfoModal.vue'
@@ -75,13 +77,24 @@ const cachedModels = reactive({
 
 // UI Modes & Tools
 const userMode = ref('standard') // 'standard' | 'power'
-const activeTool = ref('slider') // 'slider' | 'brush' | 'pan'
+const activeTool = ref('slider') // 'slider' | 'brush' | 'select' | 'pan'
 const brushMode = ref('erase') // 'erase' | 'restore'
 const brushSize = ref(35)
 const isDrawing = ref(false)
 const brushCanvasRef = ref(null)
 const displayCanvasRef = ref(null) // Live GPU-composited preview canvas
+const selectionCanvasRef = ref(null) // Dotted marching ants selection overlay
 let rAFPending = false // requestAnimationFrame batching flag
+
+// Selection (Marching Ants) Tool System
+const selectShape = ref('rect') // 'rect' | 'lasso'
+const isSelecting = ref(false)
+const selectionBox = reactive({ startX: 0, startY: 0, currentX: 0, currentY: 0 })
+const lassoPoints = ref([])
+const activeSelection = ref(null) // { type: 'rect', x, y, width, height } | { type: 'lasso', points: [] }
+const hasSelection = computed(() => !!activeSelection.value)
+let antsAnimationId = null
+let antsDashOffset = 0
 
 // Zoom & Pan System
 const zoomLevel = ref(1) // 1 = 100%
@@ -732,6 +745,210 @@ function onPointerUp() {
   }
 }
 
+// --- DOTTED MARCHING ANTS SELECTION ENGINE ---
+function renderSelectionOverlay() {
+  const canvas = selectionCanvasRef.value
+  if (!canvas) return
+  const width = imageDimensions.width
+  const height = imageDimensions.height
+  if (!width || !height) return
+
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width
+    canvas.height = height
+  }
+
+  const ctx = canvas.getContext('2d')
+  ctx.clearRect(0, 0, width, height)
+
+  const sel = activeSelection.value
+  if (!sel && !isSelecting.value) return
+
+  ctx.save()
+
+  // Define the selection path
+  ctx.beginPath()
+  if (isSelecting.value && selectShape.value === 'rect') {
+    const x = Math.min(selectionBox.startX, selectionBox.currentX)
+    const y = Math.min(selectionBox.startY, selectionBox.currentY)
+    const w = Math.abs(selectionBox.currentX - selectionBox.startX)
+    const h = Math.abs(selectionBox.currentY - selectionBox.startY)
+    ctx.rect(x, y, w, h)
+  } else if (isSelecting.value && selectShape.value === 'lasso' && lassoPoints.value.length > 1) {
+    const pts = lassoPoints.value
+    ctx.moveTo(pts[0].x, pts[0].y)
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i].x, pts[i].y)
+    }
+  } else if (sel) {
+    if (sel.type === 'rect') {
+      ctx.rect(sel.x, sel.y, sel.width, sel.height)
+    } else if (sel.type === 'lasso' && sel.points.length > 1) {
+      ctx.moveTo(sel.points[0].x, sel.points[0].y)
+      for (let i = 1; i < sel.points.length; i++) {
+        ctx.lineTo(sel.points[i].x, sel.points[i].y)
+      }
+      ctx.closePath()
+    }
+  }
+
+  // 1. Soft semi-transparent blue highlight fill
+  ctx.fillStyle = 'rgba(99, 102, 241, 0.18)'
+  ctx.fill()
+
+  // 2. Dual-color "Marching Ants" outline (black base + animated white dashes)
+  ctx.lineCap = 'butt'
+  ctx.lineJoin = 'miter'
+  ctx.lineWidth = Math.max(1.5, Math.round(2 / zoomLevel.value))
+
+  // Black solid underlay for strong contrast over bright areas
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)'
+  ctx.setLineDash([])
+  ctx.stroke()
+
+  // White animated dashes on top
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)'
+  const dashLen = Math.max(4, Math.round(6 / zoomLevel.value))
+  ctx.setLineDash([dashLen, dashLen])
+  ctx.lineDashOffset = antsDashOffset
+  ctx.stroke()
+
+  ctx.restore()
+}
+
+function startAntsAnimation() {
+  if (antsAnimationId) return
+  const loop = () => {
+    antsDashOffset = (antsDashOffset - 0.4) % 100
+    renderSelectionOverlay()
+    if (activeTool.value === 'select' && (hasSelection.value || isSelecting.value)) {
+      antsAnimationId = requestAnimationFrame(loop)
+    } else {
+      antsAnimationId = null
+    }
+  }
+  antsAnimationId = requestAnimationFrame(loop)
+}
+
+function stopAntsAnimation() {
+  if (antsAnimationId) {
+    cancelAnimationFrame(antsAnimationId)
+    antsAnimationId = null
+  }
+  const canvas = selectionCanvasRef.value
+  if (canvas) {
+    const ctx = canvas.getContext('2d')
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+  }
+}
+
+// Selection Pointer Handlers
+function onSelectPointerDown(e) {
+  if (activeTool.value !== 'select') return
+  e.currentTarget.setPointerCapture(e.pointerId)
+  const coords = getCanvasCoords(e)
+
+  isSelecting.value = true
+  if (selectShape.value === 'rect') {
+    selectionBox.startX = coords.x
+    selectionBox.startY = coords.y
+    selectionBox.currentX = coords.x
+    selectionBox.currentY = coords.y
+    activeSelection.value = null
+  } else {
+    lassoPoints.value = [coords]
+    activeSelection.value = null
+  }
+  startAntsAnimation()
+}
+
+function onSelectPointerMove(e) {
+  if (!isSelecting.value) return
+  const coords = getCanvasCoords(e)
+
+  if (selectShape.value === 'rect') {
+    selectionBox.currentX = coords.x
+    selectionBox.currentY = coords.y
+  } else {
+    const pts = lassoPoints.value
+    const last = pts[pts.length - 1]
+    const dist = Math.hypot(coords.x - last.x, coords.y - last.y)
+    if (dist >= 3) {
+      lassoPoints.value.push(coords)
+    }
+  }
+}
+
+function onSelectPointerUp() {
+  if (!isSelecting.value) return
+  isSelecting.value = false
+
+  if (selectShape.value === 'rect') {
+    const x = Math.min(selectionBox.startX, selectionBox.currentX)
+    const y = Math.min(selectionBox.startY, selectionBox.currentY)
+    const w = Math.abs(selectionBox.currentX - selectionBox.startX)
+    const h = Math.abs(selectionBox.currentY - selectionBox.startY)
+
+    if (w > 5 && h > 5) {
+      activeSelection.value = { type: 'rect', x, y, width: w, height: h }
+    } else {
+      activeSelection.value = null
+      stopAntsAnimation()
+    }
+  } else {
+    if (lassoPoints.value.length > 5) {
+      activeSelection.value = { type: 'lasso', points: [...lassoPoints.value] }
+    } else {
+      activeSelection.value = null
+      stopAntsAnimation()
+    }
+  }
+}
+
+function clearSelection() {
+  activeSelection.value = null
+  lassoPoints.value = []
+  stopAntsAnimation()
+}
+
+function applySelectionAction(action) {
+  if (!activeSelection.value || !maskCtx || !originalCanvas) return
+  const sel = activeSelection.value
+
+  maskCtx.save()
+
+  // Trace the active selection path onto the mask
+  maskCtx.beginPath()
+  if (sel.type === 'rect') {
+    maskCtx.rect(sel.x, sel.y, sel.width, sel.height)
+  } else if (sel.type === 'lasso' && sel.points.length > 1) {
+    maskCtx.moveTo(sel.points[0].x, sel.points[0].y)
+    for (let i = 1; i < sel.points.length; i++) {
+      maskCtx.lineTo(sel.points[i].x, sel.points[i].y)
+    }
+    maskCtx.closePath()
+  }
+
+  if (action === 'erase') {
+    // Erase enclosed area cleanly
+    maskCtx.globalCompositeOperation = 'destination-out'
+    maskCtx.fillStyle = 'rgba(0, 0, 0, 1)'
+    maskCtx.fill()
+  } else if (action === 'restore') {
+    // Restore enclosed area directly as visible foreground
+    maskCtx.globalCompositeOperation = 'source-over'
+    maskCtx.fillStyle = 'rgba(255, 255, 255, 1)'
+    maskCtx.fill()
+  }
+
+  maskCtx.restore()
+
+  // Save undo history and trigger instant re-composite
+  saveUndoState()
+  recompositeCanvas(true)
+  clearSelection()
+}
+
 // Event Handlers
 function onFileSelect(e) {
   const file = e.target.files?.[0]
@@ -781,6 +998,7 @@ function reset() {
   originalCanvas = null
   originalCtx = null
   rAFPending = false
+  clearSelection()
   resetZoom()
   fileName.value = ''
   fileSize.value = ''
@@ -789,18 +1007,38 @@ function reset() {
   undoHistory.value = []
 }
 
-// When switching to brush mode, initialize display canvas with current result
+function onKeyDown(e) {
+  // If user has a selection active, support Delete/Backspace to erase, Enter to restore, Esc to clear
+  if (activeTool.value === 'select' && hasSelection.value) {
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault()
+      applySelectionAction('erase')
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      applySelectionAction('restore')
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      clearSelection()
+    }
+  }
+}
+
+// When switching modes, initialize preview or manage selection state
 watch(activeTool, (newTool) => {
   if (newTool === 'brush' && originalCanvas && maskCanvas) {
     nextTick(() => {
       renderFastPreview()
     })
   }
+  if (newTool !== 'select') {
+    clearSelection()
+  }
 })
 
 onMounted(() => {
   checkModelCacheStatus()
   window.addEventListener('paste', onPaste)
+  window.addEventListener('keydown', onKeyDown)
   updateBrowserZoom()
   window.addEventListener('resize', updateBrowserZoom)
   if (window.visualViewport) {
@@ -810,10 +1048,12 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('paste', onPaste)
+  window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('resize', updateBrowserZoom)
   if (window.visualViewport) {
     window.visualViewport.removeEventListener('resize', updateBrowserZoom)
   }
+  stopAntsAnimation()
 })
 </script>
 
@@ -1004,7 +1244,7 @@ onUnmounted(() => {
               <span class="tag">{{ fileSize }}</span>
             </div>
 
-            <!-- Tool Switcher: Compare Slider vs Magic Brush vs Pan -->
+            <!-- Tool Switcher: Compare Slider vs Magic Brush vs Select vs Pan -->
             <div class="tool-switch-bar">
               <button
                 :class="['tool-btn', { active: activeTool === 'slider' }]"
@@ -1019,6 +1259,13 @@ onUnmounted(() => {
                 title="Erase or Restore Brush"
               >
                 <Paintbrush :size="14" /> Magic Brush
+              </button>
+              <button
+                :class="['tool-btn', { active: activeTool === 'select' }]"
+                @click="activeTool = 'select'"
+                title="Dotted Marquee Selection (Rectangle & Lasso)"
+              >
+                <BoxSelect :size="14" /> Select
               </button>
               <button
                 :class="['tool-btn', { active: activeTool === 'pan' }]"
@@ -1064,7 +1311,7 @@ onUnmounted(() => {
 
           <!-- Dynamic Viewport with Wheel Zoom & Pan Support -->
           <div
-            :class="['comparison-viewport', `bg-${previewBg}`, { 'is-brush-active': activeTool === 'brush', 'is-panning': isPanning, 'tool-pan': activeTool === 'pan' }]"
+            :class="['comparison-viewport', `bg-${previewBg}`, { 'is-brush-active': activeTool === 'brush', 'is-select-active': activeTool === 'select', 'is-panning': isPanning, 'tool-pan': activeTool === 'pan' }]"
             @wheel="onWheelZoom"
           >
             <!-- Zoom & Pan Floating Controls -->
@@ -1169,6 +1416,24 @@ onUnmounted(() => {
                   <div class="brush-cursor-guide"></div>
                 </div>
               </template>
+
+              <!-- MODE 3: Dotted Marquee Selection Interactive Layer -->
+              <template v-else-if="activeTool === 'select'">
+                <div
+                  class="selection-interaction-surface"
+                  @pointerdown="onSelectPointerDown"
+                  @pointermove="onSelectPointerMove"
+                  @pointerup="onSelectPointerUp"
+                  @pointerleave="onSelectPointerUp"
+                ></div>
+              </template>
+
+              <!-- Dotted Marching Ants Selection Overlay Canvas (always rendered on top when selection is active) -->
+              <canvas
+                ref="selectionCanvasRef"
+                class="viewport-img selection-overlay-canvas"
+                :style="{ display: (activeTool === 'select' && (hasSelection || isSelecting)) ? 'block' : 'none' }"
+              ></canvas>
             </div>
 
             <!-- Pan Drag Overlay when activeTool === 'pan' -->
@@ -1189,7 +1454,7 @@ onUnmounted(() => {
               <span v-if="activeTool === 'slider'" class="slider-hint">
                 ↔ Drag slider to compare cutout with original
               </span>
-              <div v-else class="brush-toolbar">
+              <div v-else-if="activeTool === 'brush'" class="brush-toolbar">
                 <div class="brush-mode-pills">
                   <button
                     :class="['b-pill', { active: brushMode === 'erase' }]"
@@ -1217,6 +1482,57 @@ onUnmounted(() => {
                   Reset
                 </button>
               </div>
+
+              <!-- Selection Tool Footer Controls -->
+              <div v-else-if="activeTool === 'select'" class="select-toolbar">
+                <div class="brush-mode-pills">
+                  <button
+                    :class="['b-pill', { active: selectShape === 'rect' }]"
+                    @click="selectShape = 'rect'; clearSelection()"
+                    title="Rectangle Marquee"
+                  >
+                    <BoxSelect :size="12" /> Rectangle
+                  </button>
+                  <button
+                    :class="['b-pill', { active: selectShape === 'lasso' }]"
+                    @click="selectShape = 'lasso'; clearSelection()"
+                    title="Freehand Lasso Selection"
+                  >
+                    <Lasso :size="12" /> Lasso
+                  </button>
+                </div>
+
+                <!-- Action Buttons: Visible when an area is selected -->
+                <div v-if="hasSelection" class="selection-actions-group">
+                  <button
+                    class="btn-sel-action erase-btn"
+                    @click="applySelectionAction('erase')"
+                    title="Erase background inside selected area (Delete key)"
+                  >
+                    <Eraser :size="12" /> Erase Region
+                  </button>
+                  <button
+                    class="btn-sel-action restore-btn"
+                    @click="applySelectionAction('restore')"
+                    title="Restore subject inside selected area (Enter key)"
+                  >
+                    <Paintbrush :size="12" /> Restore Region
+                  </button>
+                  <button
+                    class="btn-sel-action cancel-btn"
+                    @click="clearSelection"
+                    title="Deselect area (Esc key)"
+                  >
+                    Deselect
+                  </button>
+                </div>
+                <span v-else class="select-hint">
+                  Draw an area with marching ants to erase or restore
+                </span>
+              </div>
+              <span v-else-if="activeTool === 'pan'" class="slider-hint">
+                ✋ Click and drag anywhere to pan the canvas
+              </span>
             </div>
 
             <!-- Right Action Buttons -->
@@ -2059,7 +2375,8 @@ kbd {
 }
 
 .comparison-viewport.is-panning .viewport-transform-layer,
-.comparison-viewport.is-brush-active .viewport-transform-layer {
+.comparison-viewport.is-brush-active .viewport-transform-layer,
+.comparison-viewport.is-select-active .viewport-transform-layer {
   transition: none;
 }
 
@@ -2233,6 +2550,91 @@ kbd {
   height: 100%;
   cursor: crosshair;
   z-index: 25;
+}
+
+/* Dotted Selection Surface & Canvas */
+.selection-interaction-surface {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  z-index: 25;
+  touch-action: none;
+}
+
+.selection-overlay-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 26;
+}
+
+/* Select Mode Footer Toolbar */
+.select-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.select-hint {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+.selection-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-sel-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-sel-action.erase-btn {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.btn-sel-action.erase-btn:hover {
+  background: rgba(239, 68, 68, 0.3);
+  color: #fecaca;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.25);
+}
+
+.btn-sel-action.restore-btn {
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.btn-sel-action.restore-btn:hover {
+  background: rgba(16, 185, 129, 0.3);
+  color: #a7f3d0;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
+}
+
+.btn-sel-action.cancel-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.btn-sel-action.cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #f1f5f9;
 }
 
 /* Stage Footer Bar */
