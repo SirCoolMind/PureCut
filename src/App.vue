@@ -30,10 +30,18 @@ import {
   Monitor,
   BoxSelect,
   Lasso,
-  Magnet
+  Magnet,
+  Wand2,
+  PenTool,
+  Scan,
+  Users,
+  Eye,
+  EyeOff,
+  Sparkle
 } from 'lucide-vue-next'
 import { appVersion, modelOptions } from './constants.js'
 import InfoModal from './components/InfoModal.vue'
+import { detectSubjects, magicWandFloodFill } from './detectionEngine.js'
 
 // --- State ---
 const originalUrl = ref(null)
@@ -88,14 +96,20 @@ const selectionCanvasRef = ref(null) // Dotted marching ants selection overlay
 let rAFPending = false // requestAnimationFrame batching flag
 
 // Selection (Marching Ants) Tool System
-const selectShape = ref('magnetic') // 'magnetic' | 'lasso' | 'rect'
+const selectShape = ref('magnetic') // 'magnetic' | 'lasso' | 'rect' | 'polygon' | 'wand'
 const isSelecting = ref(false)
 const selectionBox = reactive({ startX: 0, startY: 0, currentX: 0, currentY: 0 })
 const lassoPoints = ref([])
-const activeSelection = ref(null) // { type: 'rect', x, y, width, height } | { type: 'lasso', points: [] }
-const hasSelection = computed(() => !!activeSelection.value)
+const activeSelection = ref(null) // { type: 'rect', x, y, width, height } | { type: 'lasso', points: [] } | { type: 'wand', points: [], visitedMask: Uint8Array, ... }
+const hasSelection = computed(() => !!activeSelection.value || (selectShape.value === 'polygon' && isSelecting.value && lassoPoints.value.length > 0))
+const wandTolerance = ref(25)
 let antsAnimationId = null
 let antsDashOffset = 0
+
+// Detection State (Category & Subjects)
+const detectedSubjects = ref([])
+const showOutline = ref(false)
+const showSubjectsDrawer = ref(false)
 
 // Zoom & Pan System
 const zoomLevel = ref(1) // 1 = 100%
@@ -103,6 +117,8 @@ const panOffset = reactive({ x: 0, y: 0 })
 const isPanning = ref(false)
 let panStartPoint = { x: 0, y: 0 }
 let initialPan = { x: 0, y: 0 }
+
+const redoHistory = ref([])
 
 function zoomIn() {
   zoomLevel.value = Math.min(4, +(zoomLevel.value + 0.25).toFixed(2))
@@ -124,12 +140,25 @@ function resetZoom() {
 function onWheelZoom(e) {
   if (!resultUrl.value) return
   e.preventDefault()
-  const delta = e.deltaY > 0 ? -0.15 : 0.15
-  const newZoom = Math.min(4, Math.max(0.5, +(zoomLevel.value + delta).toFixed(2)))
-  zoomLevel.value = newZoom
-  if (newZoom === 1) {
-    panOffset.x = 0
-    panOffset.y = 0
+
+  // Zoom: Ctrl + Alt + Scroll (e.ctrlKey && e.altKey)
+  if (e.ctrlKey && e.altKey) {
+    const delta = e.deltaY > 0 ? -0.15 : 0.15
+    const newZoom = Math.min(4, Math.max(0.5, +(zoomLevel.value + delta).toFixed(2)))
+    zoomLevel.value = newZoom
+    if (newZoom === 1) {
+      panOffset.x = 0
+      panOffset.y = 0
+    }
+  } 
+  // Pan X: Ctrl + Scroll
+  else if (e.ctrlKey || e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+    const dx = e.deltaX !== 0 ? e.deltaX : (e.deltaY !== 0 ? e.deltaY : 0)
+    panOffset.x -= dx
+  }
+  // Pan Y: Standard Scroll
+  else {
+    panOffset.y -= e.deltaY
   }
 }
 
@@ -457,6 +486,15 @@ async function processImage(file) {
     telemetry.deviceUsed = selectedDevice.value === 'gpu' ? 'WebGPU (Hardware GPU)' : 'WASM SIMD Multi-threaded'
 
     recompositeCanvas()
+    
+    // Analyze and extract separate objects/subjects asynchronously
+    setTimeout(() => {
+      detectedSubjects.value = detectSubjects(maskCanvas, originalCanvas)
+      if (detectedSubjects.value.length > 1) {
+        showSubjectsDrawer.value = true // automatically open drawer if multiple subjects found
+      }
+    }, 50)
+    
   } catch (error) {
     console.error('Processing error:', error)
     alert('Failed to process image. Try selecting another model or device.')
@@ -611,19 +649,144 @@ function recompositeCanvas(immediateBlob = false) {
   }
 }
 
+// Global Outline Rendering Engine
+let globalOutlineAnimationId = null
+let outlineDashOffset = 0
+import { extractMaskContourSegments } from './detectionEngine.js'
+
+function toggleOutline() {
+  showOutline.value = !showOutline.value
+  if (showOutline.value) {
+    updateOutlineOverlay()
+  } else {
+    stopOutlineAnimation()
+  }
+}
+
+function updateOutlineOverlay(sourceMask = maskCanvas) {
+  if (!sourceMask || !showOutline.value) return
+  const segments = extractMaskContourSegments(sourceMask)
+  
+  if (globalOutlineAnimationId) cancelAnimationFrame(globalOutlineAnimationId)
+  
+  const canvas = document.getElementById('outlineCanvas')
+  if (!canvas) return
+  canvas.width = imageDimensions.width
+  canvas.height = imageDimensions.height
+  const ctx = canvas.getContext('2d')
+  
+  const loop = () => {
+    if (!showOutline.value) {
+      stopOutlineAnimation()
+      return
+    }
+    outlineDashOffset = (outlineDashOffset - 0.5) % 100
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    
+    ctx.lineCap = 'round'
+    ctx.lineWidth = Math.max(1.5, Math.round(2 / zoomLevel.value))
+    
+    ctx.beginPath()
+    for (const seg of segments) {
+      ctx.moveTo(seg.x1, seg.y)
+      ctx.lineTo(seg.x2, seg.y)
+    }
+    
+    // Black base
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)'
+    ctx.setLineDash([])
+    ctx.stroke()
+    
+    // White animated dash
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)'
+    const dashLen = Math.max(3, Math.round(5 / zoomLevel.value))
+    ctx.setLineDash([dashLen, dashLen])
+    ctx.lineDashOffset = outlineDashOffset
+    ctx.stroke()
+    
+    globalOutlineAnimationId = requestAnimationFrame(loop)
+  }
+  
+  loop()
+}
+
+function stopOutlineAnimation() {
+  if (globalOutlineAnimationId) {
+    cancelAnimationFrame(globalOutlineAnimationId)
+    globalOutlineAnimationId = null
+  }
+  const canvas = document.getElementById('outlineCanvas')
+  if (canvas) {
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
+  }
+}
+
+function toggleSubjectVisibility(subject, forceErase = false) {
+  if (forceErase) {
+    subject.visible = false
+  } else {
+    subject.visible = !subject.visible
+  }
+
+  // Restore if turning on, erase if turning off
+  const action = subject.visible ? 'restore' : 'erase'
+  
+  if (maskCtx) {
+    maskCtx.save()
+    maskCtx.beginPath()
+    maskCtx.rect(subject.x, subject.y, subject.width, subject.height)
+    maskCtx.clip()
+    
+    if (action === 'erase') {
+      maskCtx.globalCompositeOperation = 'destination-out'
+      maskCtx.fillStyle = 'rgba(0, 0, 0, 1)'
+    } else {
+      maskCtx.globalCompositeOperation = 'source-over'
+      maskCtx.fillStyle = 'rgba(255, 255, 255, 1)'
+    }
+    
+    // Draw only the exact alpha mask belonging to this connected component? 
+    // Wait, we don't have the exact mask of just this component mapped back.
+    // We'll fill the bounding box. It's a rough bounding box erase.
+    // For a perfect erase, we should really use the pixel binary mask. But filling the rect works for isolated islands.
+    maskCtx.fill()
+    maskCtx.restore()
+    
+    saveUndoState()
+    recompositeCanvas(true)
+  }
+}
+
+function eraseSubject(subject) {
+  toggleSubjectVisibility(subject, true)
+  // and remove it from array
+  detectedSubjects.value = detectedSubjects.value.filter(s => s.id !== subject.id)
+}
+
 // --- INTERACTIVE MAGIC BRUSH ENGINE ---
 function saveUndoState() {
   if (!maskCtx) return
   if (undoHistory.value.length > 15) undoHistory.value.shift()
   const snapshot = maskCtx.getImageData(0, 0, imageDimensions.width, imageDimensions.height)
   undoHistory.value.push(snapshot)
+  redoHistory.value = [] // clear redo on new action
 }
 
 function handleUndo() {
   if (undoHistory.value.length <= 1 || !maskCtx) return
-  undoHistory.value.pop() // remove current state
+  const currentState = undoHistory.value.pop() // remove current state
+  redoHistory.value.push(currentState) // add to redo
+  
   const previousState = undoHistory.value[undoHistory.value.length - 1]
   maskCtx.putImageData(previousState, 0, 0)
+  recompositeCanvas(true)
+}
+
+function handleRedo() {
+  if (redoHistory.value.length === 0 || !maskCtx) return
+  const nextState = redoHistory.value.pop()
+  undoHistory.value.push(nextState)
+  maskCtx.putImageData(nextState, 0, 0)
   recompositeCanvas(true)
 }
 
@@ -632,6 +795,7 @@ function resetBrush() {
     const originalState = undoHistory.value[0]
     maskCtx.putImageData(originalState, 0, 0)
     undoHistory.value = [originalState]
+    redoHistory.value = []
     recompositeCanvas(true)
   }
 }
@@ -775,16 +939,24 @@ function renderSelectionOverlay() {
     const w = Math.abs(selectionBox.currentX - selectionBox.startX)
     const h = Math.abs(selectionBox.currentY - selectionBox.startY)
     ctx.rect(x, y, w, h)
-  } else if (isSelecting.value && selectShape.value === 'lasso' && lassoPoints.value.length > 1) {
+  } else if (isSelecting.value && (selectShape.value === 'lasso' || selectShape.value === 'magnetic') && lassoPoints.value.length > 1) {
     const pts = lassoPoints.value
     ctx.moveTo(pts[0].x, pts[0].y)
     for (let i = 1; i < pts.length; i++) {
       ctx.lineTo(pts[i].x, pts[i].y)
     }
+  } else if (isSelecting.value && selectShape.value === 'polygon' && lassoPoints.value.length > 0) {
+    const pts = lassoPoints.value
+    ctx.moveTo(pts[0].x, pts[0].y)
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i].x, pts[i].y)
+    }
+    // Draw guide line to current cursor
+    ctx.lineTo(selectionBox.currentX, selectionBox.currentY)
   } else if (sel) {
     if (sel.type === 'rect') {
       ctx.rect(sel.x, sel.y, sel.width, sel.height)
-    } else if (sel.type === 'lasso' && sel.points.length > 1) {
+    } else if ((sel.type === 'lasso' || sel.type === 'wand') && sel.points.length > 1) {
       ctx.moveTo(sel.points[0].x, sel.points[0].y)
       for (let i = 1; i < sel.points.length; i++) {
         ctx.lineTo(sel.points[i].x, sel.points[i].y)
@@ -906,7 +1078,39 @@ function onSelectPointerDown(e) {
   e.currentTarget.setPointerCapture(e.pointerId)
   let coords = getCanvasCoords(e)
 
+  if (selectShape.value === 'wand') {
+    // Magic wand click: instantaneous flood fill
+    const result = magicWandFloodFill(originalCanvas, coords.x, coords.y, wandTolerance.value)
+    if (result) {
+      activeSelection.value = result
+      startAntsAnimation()
+    } else {
+      clearSelection()
+    }
+    return
+  }
+
   isSelecting.value = true
+  
+  if (selectShape.value === 'polygon') {
+    // Click-to-add vertex polygon logic
+    if (lassoPoints.value.length === 0) {
+      lassoPoints.value = [coords]
+      startAntsAnimation()
+    } else {
+      const first = lassoPoints.value[0]
+      const dist = Math.hypot(coords.x - first.x, coords.y - first.y)
+      // Close polygon if clicked near the start point
+      if (dist < 25 / zoomLevel.value && lassoPoints.value.length > 2) {
+        activeSelection.value = { type: 'lasso', points: [...lassoPoints.value] }
+        isSelecting.value = false
+      } else {
+        lassoPoints.value.push(coords)
+      }
+    }
+    return
+  }
+
   if (selectShape.value === 'rect') {
     selectionBox.startX = coords.x
     selectionBox.startY = coords.y
@@ -927,6 +1131,13 @@ function onSelectPointerMove(e) {
   if (!isSelecting.value) return
   let coords = getCanvasCoords(e)
 
+  if (selectShape.value === 'polygon') {
+    // Live preview to cursor is handled by the render overlay
+    selectionBox.currentX = coords.x
+    selectionBox.currentY = coords.y
+    return
+  }
+
   if (selectShape.value === 'rect') {
     selectionBox.currentX = coords.x
     selectionBox.currentY = coords.y
@@ -945,8 +1156,8 @@ function onSelectPointerMove(e) {
   }
 }
 
-function onSelectPointerUp() {
-  if (!isSelecting.value) return
+function onSelectPointerUp(e) {
+  if (!isSelecting.value || selectShape.value === 'polygon') return
   isSelecting.value = false
 
   if (selectShape.value === 'rect') {
@@ -974,37 +1185,73 @@ function onSelectPointerUp() {
 function clearSelection() {
   activeSelection.value = null
   lassoPoints.value = []
+  isSelecting.value = false
   stopAntsAnimation()
 }
 
 function applySelectionAction(action) {
+  // If actively drawing a polygon, auto-close it before applying
+  if (isSelecting.value && selectShape.value === 'polygon' && lassoPoints.value.length > 2) {
+    activeSelection.value = { type: 'lasso', points: [...lassoPoints.value] }
+    isSelecting.value = false
+  }
+
   if (!activeSelection.value || !maskCtx || !originalCanvas) return
   const sel = activeSelection.value
 
   maskCtx.save()
 
-  // Trace the active selection path onto the mask
-  maskCtx.beginPath()
-  if (sel.type === 'rect') {
-    maskCtx.rect(sel.x, sel.y, sel.width, sel.height)
-  } else if (sel.type === 'lasso' && sel.points.length > 1) {
-    maskCtx.moveTo(sel.points[0].x, sel.points[0].y)
-    for (let i = 1; i < sel.points.length; i++) {
-      maskCtx.lineTo(sel.points[i].x, sel.points[i].y)
-    }
-    maskCtx.closePath()
-  }
+  if (sel.type === 'wand') {
+    // For wand, we apply the precise visited mask mapped back to full resolution
+    const wandScale = sel.scale
+    const wandW = sel.sw
+    const invScale = 1 / wandScale
 
-  if (action === 'erase') {
-    // Erase enclosed area cleanly
-    maskCtx.globalCompositeOperation = 'destination-out'
-    maskCtx.fillStyle = 'rgba(0, 0, 0, 1)'
-    maskCtx.fill()
-  } else if (action === 'restore') {
-    // Restore enclosed area directly as visible foreground
-    maskCtx.globalCompositeOperation = 'source-over'
-    maskCtx.fillStyle = 'rgba(255, 255, 255, 1)'
-    maskCtx.fill()
+    maskCtx.beginPath()
+    maskCtx.rect(sel.x, sel.y, sel.width, sel.height)
+    maskCtx.clip() // restrict to bounding box for performance
+
+    // Draw the binary mask block directly
+    if (action === 'erase') {
+      maskCtx.globalCompositeOperation = 'destination-out'
+      maskCtx.fillStyle = 'rgba(0,0,0,1)'
+    } else {
+      maskCtx.globalCompositeOperation = 'source-over'
+      maskCtx.fillStyle = 'rgba(255,255,255,1)'
+    }
+
+    // High performance fill of matching pixels
+    for (let y = 0; y < sel.sh; y++) {
+      for (let x = 0; x < sel.sw; x++) {
+        if (sel.visitedMask[y * wandW + x]) {
+          maskCtx.fillRect(Math.floor(x * invScale), Math.floor(y * invScale), Math.ceil(invScale), Math.ceil(invScale))
+        }
+      }
+    }
+  } else {
+    // Trace the active vector selection path onto the mask
+    maskCtx.beginPath()
+    if (sel.type === 'rect') {
+      maskCtx.rect(sel.x, sel.y, sel.width, sel.height)
+    } else if (sel.type === 'lasso' && sel.points.length > 1) {
+      maskCtx.moveTo(sel.points[0].x, sel.points[0].y)
+      for (let i = 1; i < sel.points.length; i++) {
+        maskCtx.lineTo(sel.points[i].x, sel.points[i].y)
+      }
+      maskCtx.closePath()
+    }
+
+    if (action === 'erase') {
+      // Erase enclosed area cleanly
+      maskCtx.globalCompositeOperation = 'destination-out'
+      maskCtx.fillStyle = 'rgba(0, 0, 0, 1)'
+      maskCtx.fill()
+    } else if (action === 'restore') {
+      // Restore enclosed area directly as visible foreground
+      maskCtx.globalCompositeOperation = 'source-over'
+      maskCtx.fillStyle = 'rgba(255, 255, 255, 1)'
+      maskCtx.fill()
+    }
   }
 
   maskCtx.restore()
@@ -1012,7 +1259,15 @@ function applySelectionAction(action) {
   // Save undo history and trigger instant re-composite
   saveUndoState()
   recompositeCanvas(true)
+  refreshDetectionData()
   clearSelection()
+}
+
+// Refresh subjects and outline after manual mask edits (brush/selection)
+function refreshDetectionData() {
+  if (showSubjectsDrawer.value && maskCanvas && originalCanvas) {
+    detectedSubjects.value = detectSubjects(maskCanvas, originalCanvas)
+  }
 }
 
 // Event Handlers
@@ -1071,9 +1326,25 @@ function reset() {
   sliderPosition.value = 50
   statusMessage.value = ''
   undoHistory.value = []
+  redoHistory.value = []
 }
 
 function onKeyDown(e) {
+  // Undo/Redo: Ctrl + Z, Ctrl + Shift + Z, Ctrl + Y
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault()
+    if (e.shiftKey) {
+      handleRedo()
+    } else {
+      handleUndo()
+    }
+    return
+  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+    e.preventDefault()
+    handleRedo()
+    return
+  }
+
   // If user has a selection active, support Delete/Backspace to erase, Enter to restore, Esc to clear
   if (activeTool.value === 'select' && hasSelection.value) {
     if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -1086,6 +1357,9 @@ function onKeyDown(e) {
       e.preventDefault()
       clearSelection()
     }
+  } else if (activeTool.value === 'select' && isSelecting.value && selectShape.value === 'polygon' && e.key === 'Escape') {
+    e.preventDefault()
+    clearSelection()
   }
 }
 
@@ -1308,6 +1582,14 @@ onUnmounted(() => {
               <span class="tag file-tag"><ImageIcon :size="13" /> {{ fileName }}</span>
               <span class="tag">{{ imageDimensions.width }} × {{ imageDimensions.height }}px</span>
               <span class="tag">{{ fileSize }}</span>
+              <button 
+                v-if="detectedSubjects.length > 1" 
+                :class="['tag subject-tag btn', { active: showSubjectsDrawer }]" 
+                @click="showSubjectsDrawer = !showSubjectsDrawer"
+                title="Toggle subjects panel"
+              >
+                <Users :size="13" /> {{ detectedSubjects.length }} Subjects Detected
+              </button>
             </div>
 
             <!-- Tool Switcher: Compare Slider vs Magic Brush vs Select vs Pan -->
@@ -1500,6 +1782,43 @@ onUnmounted(() => {
                 class="viewport-img selection-overlay-canvas"
                 :style="{ display: (activeTool === 'select' && (hasSelection || isSelecting)) ? 'block' : 'none' }"
               ></canvas>
+
+              <!-- Global Cutout Marching Ants Outline Canvas -->
+              <canvas
+                id="outlineCanvas"
+                class="viewport-img outline-overlay-canvas"
+                :style="{ display: showOutline ? 'block' : 'none' }"
+              ></canvas>
+            </div>
+
+            <!-- Multi-Subject Drawer Panel Overlay -->
+            <div :class="['subjects-drawer', { open: showSubjectsDrawer }]">
+              <div class="drawer-header">
+                <h3>Detected Subjects ({{ detectedSubjects.length }})</h3>
+                <button class="drawer-close" @click="showSubjectsDrawer = false">✕</button>
+              </div>
+              <div class="drawer-body">
+                <div v-if="detectedSubjects.length === 0" class="empty-state">
+                  No distinct subjects found.
+                </div>
+                <div v-for="subject in detectedSubjects" :key="subject.id" class="subject-item">
+                  <div class="subject-thumb">
+                    <img :src="subject.thumbnail" :alt="subject.label" />
+                  </div>
+                  <div class="subject-info">
+                    <span class="subject-label">{{ subject.label }}</span>
+                    <span class="subject-meta">Area: {{ (subject.pixelRatio * 100).toFixed(1) }}%</span>
+                  </div>
+                  <div class="subject-actions">
+                    <button class="icon-btn" @click="toggleSubjectVisibility(subject)" :title="subject.visible ? 'Hide subject' : 'Show subject'">
+                      <component :is="subject.visible ? Eye : EyeOff" :size="14" />
+                    </button>
+                    <button class="icon-btn danger" @click="eraseSubject(subject)" title="Erase subject permanently">
+                      <Eraser :size="14" />
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- Pan Drag Overlay when activeTool === 'pan' -->
@@ -1567,12 +1886,31 @@ onUnmounted(() => {
                     <Lasso :size="12" /> Freehand
                   </button>
                   <button
+                    :class="['b-pill', { active: selectShape === 'polygon' }]"
+                    @click="selectShape = 'polygon'; clearSelection()"
+                    title="Click points to draw a precise polygonal perimeter"
+                  >
+                    <PenTool :size="12" /> Polygon
+                  </button>
+                  <button
                     :class="['b-pill', { active: selectShape === 'rect' }]"
                     @click="selectShape = 'rect'; clearSelection()"
                     title="Rectangle Marquee"
                   >
                     <BoxSelect :size="12" /> Rectangle
                   </button>
+                  <button
+                    :class="['b-pill', { active: selectShape === 'wand' }]"
+                    @click="selectShape = 'wand'; clearSelection()"
+                    title="Magic Wand: Click to select regions by color similarity"
+                  >
+                    <Wand2 :size="12" /> Magic Wand
+                  </button>
+                </div>
+
+                <div v-if="selectShape === 'wand'" class="size-control">
+                  <span>Tolerance: <strong>{{ wandTolerance }}</strong></span>
+                  <input type="range" min="1" max="100" v-model.number="wandTolerance" class="mini-range" />
                 </div>
 
                 <!-- Action Buttons: Visible when an area is selected -->
@@ -1602,6 +1940,8 @@ onUnmounted(() => {
                 <span v-else class="select-hint">
                   <span v-if="selectShape === 'magnetic'">🧲 Draw around any object — line snaps automatically to its detected edge</span>
                   <span v-else-if="selectShape === 'lasso'">✏️ Draw freehand selection around any area</span>
+                  <span v-else-if="selectShape === 'polygon'">📍 Click points to draw a polygon. Click near start point to close.</span>
+                  <span v-else-if="selectShape === 'wand'">🪄 Click any area on the image to select similar colors</span>
                   <span v-else>⬚ Drag a rectangle box around any area</span>
                 </span>
               </div>
@@ -2321,6 +2661,8 @@ kbd {
   justify-content: space-between;
   align-items: center;
   flex-shrink: 0;
+  position: relative;
+  z-index: 10;
 }
 
 .meta-tags {
@@ -2343,6 +2685,27 @@ kbd {
   gap: 4px;
   color: #f1f5f9;
   font-weight: 600;
+}
+
+.subject-tag {
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  color: #a5b4fc;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+
+.subject-tag:hover {
+  background: rgba(99, 102, 241, 0.25);
+  color: white;
+}
+
+.subject-tag.active {
+  background: #6366f1;
+  color: white;
 }
 
 /* Tool switch buttons */
@@ -3091,5 +3454,123 @@ kbd {
   background: rgba(99, 102, 241, 0.3);
   color: #c7d2fe;
   border-color: rgba(99, 102, 241, 0.5);
+}
+
+/* Subjects Drawer */
+.subjects-drawer {
+  position: absolute;
+  top: 0;
+  right: -300px;
+  width: 280px;
+  height: 100%;
+  background: rgba(30, 41, 59, 0.95);
+  backdrop-filter: blur(10px);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+  transition: right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  z-index: 50; /* Ensure it stays above tools and selection actions */
+  pointer-events: auto; /* Ensure clicks work */
+}
+
+.subjects-drawer.open {
+  right: 0;
+}
+
+.drawer-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.drawer-header h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f1f5f9;
+  margin: 0;
+}
+
+.drawer-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+}
+
+.drawer-close:hover {
+  color: #f87171;
+}
+
+.drawer-body {
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.subject-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: border-color 0.2s;
+}
+
+.subject-item:hover {
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.subject-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #000;
+  flex-shrink: 0;
+}
+
+.subject-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.subject-info {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.subject-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.subject-meta {
+  font-size: 10.5px;
+  color: #94a3b8;
+}
+
+.subject-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.empty-state {
+  font-size: 12px;
+  color: #94a3b8;
+  text-align: center;
+  margin-top: 20px;
 }
 </style>
