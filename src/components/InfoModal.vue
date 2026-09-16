@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { ref } from 'vue'
 import {
   Sparkles,
@@ -432,10 +432,13 @@ const infoTab = ref('changelog') // 'changelog' | 'roadmap' | 'about' | 'storage
 .change-badge {
   font-size: 9px;
   font-weight: 700;
-  padding: 1px 5px;
+  padding: 1px 0;
   border-radius: 4px;
   flex-shrink: 0;
   margin-top: 2px;
+  width: 54px;
+  text-align: center;
+  display: inline-block;
 }
 
 .change-badge.new {

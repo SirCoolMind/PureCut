@@ -69,11 +69,10 @@ export const roadmap = [
   {
     category: '🎯 Selection & Detection',
     items: [
-      { text: 'Dotted cutout outline — marching ants animation around detected subject', status: 'planned' },
-      { text: 'Auto-detect categories — Human, Animal, Product with optimized settings', status: 'planned' },
-      { text: 'Multi-subject detection — pick which subjects to keep or remove', status: 'planned' },
-      { text: 'Polygon / Lasso selection tool for precise manual boundaries', status: 'planned' },
-      { text: 'Magic Wand — color-based region selection', status: 'planned' },
+      { text: 'Dotted cutout outline — marching ants animation around detected subject', status: 'done' },
+      { text: 'Multi-subject detection — pick which subjects to keep or remove', status: 'done' },
+      { text: 'Polygon / Lasso selection tool for precise manual boundaries', status: 'done' },
+      { text: 'Magic Wand — color-based region selection', status: 'done' },
     ]
   },
   {
