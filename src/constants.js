@@ -1,17 +1,27 @@
-export const appVersion = '1.3.0'
+export const appVersion = '1.4.0'
 
 export const modelOptions = [
-  { id: 'briaai/RMBG-1.4', name: 'BRIA RMBG-1.4 (SOTA · Recommended)', size: '43 MB', engine: 'rmbg', desc: 'State-of-the-art accuracy on difficult clothes, hair, reflections, and complex poses.' },
-  { id: 'isnet_quint8', name: 'ISNet Quantized (Fast)', size: '41 MB', engine: 'isnet', desc: 'Fast salient object detector for simple studio backgrounds.' },
-  { id: 'isnet_fp16', name: 'ISNet FP16 (High Precision)', size: '82 MB', engine: 'isnet', desc: 'Higher precision floating-point ISNet model.' },
-  { id: 'isnet', name: 'ISNet Full FP32', size: '176 MB', engine: 'isnet', desc: 'Full 32-bit floating point model for benchmark verification.' }
+  { id: 'briaai/RMBG-1.4', name: 'BRIA RMBG-1.4 (SOTA · Recommended)', size: '43 MB', engine: 'transformers', dtype: 'q8', desc: 'State-of-the-art accuracy on difficult clothes, hair, reflections, and complex poses.' },
+  { id: 'onnx-community/ISNet-ONNX', name: 'DIS / IS-Net (High-Precision Salient Cutout)', size: '42 MB', engine: 'transformers', dtype: 'q8', desc: 'Dichotomous Image Segmentation model with exceptional boundary definition.' },
+  { id: 'Xenova/modnet', name: 'MODNet (Portrait Matting)', size: '20 MB', engine: 'transformers', dtype: 'q8', desc: 'Trimap-free portrait matting model optimized for fast processing.' }
 ]
 
 export const changelog = [
   {
+    version: '1.4.0',
+    date: '2026-09-18',
+    tag: 'Latest',
+    changes: [
+      { type: 'new', text: 'DIS / IS-Net (42 MB ONNX) integration: High-precision Dichotomous Image Segmentation model with zero-memory-leak inference' },
+      { type: 'perf', text: 'Smart Multi-pass Preprocessing: Safe canvas scaling prevents 32-bit WASM std::bad_alloc OOM across Opera GX, Chrome & Firefox' },
+      { type: 'fix', text: 'Safe WebGPU hardware detection: Probes navigator.gpu.requestAdapter() to avoid shader crash on unsupported platforms' },
+      { type: 'fix', text: 'Automated Playwright regression test suite validating cutouts directly against real browser UI' }
+    ]
+  },
+  {
     version: '1.3.0',
     date: '2026-09-15',
-    tag: 'Latest',
+    tag: 'Previous',
     changes: [
       { type: 'new', text: 'Smart Magnetic Lasso: Snaps marching ants automatically to detected object contours' },
       { type: 'new', text: 'Dotted "Marching Ants" Marquee Selection Tool: Magnetic, Freehand Lasso, and Rectangle modes' },

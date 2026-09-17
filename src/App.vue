@@ -1,7 +1,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { runRMBG, runISNet, preloadRMBG, resetLoadedModels } from './aiEngine.js'
-import { preload as imglyPreload } from '@imgly/background-removal'
+import { runTransformersModel, preloadTransformersModel, resetLoadedModels } from './aiEngine.js'
 import {
   UploadCloud,
   Sparkles,
@@ -37,13 +36,17 @@ import {
   Users,
   Eye,
   EyeOff,
-  Sparkle
+  Sparkle,
+  Settings
 } from 'lucide-vue-next'
 import { appVersion, modelOptions } from './constants.js'
 import InfoModal from './components/InfoModal.vue'
+import SettingsModal from './components/SettingsModal.vue'
+import ShowcaseModal from './components/ShowcaseModal.vue'
 import { detectSubjects, magicWandFloodFill } from './detectionEngine.js'
 
 // --- State ---
+const showBenchmarkPage = ref(false)
 const originalUrl = ref(null)
 const originalImageEl = ref(null)
 const resultUrl = ref(null)
@@ -77,12 +80,14 @@ const telemetry = reactive({
 
 const selectedModel = ref('briaai/RMBG-1.4')
 const selectedDevice = ref('gpu') // 'gpu' | 'cpu'
-const cachedModels = reactive({
-  'briaai/RMBG-1.4': false,
-  'isnet_quint8': false,
-  'isnet_fp16': false,
-  'isnet': false
-})
+const cachedModels = reactive(
+  modelOptions.reduce((acc, m) => {
+    acc[m.id] = false;
+    return acc;
+  }, {})
+)
+
+const showSettingsModal = ref(false)
 
 // UI Modes & Tools
 const userMode = ref('standard') // 'standard' | 'power'
@@ -251,7 +256,7 @@ async function checkModelCacheStatus() {
 }
 
 const formattedCacheUsage = computed(() => {
-  if (!cacheUsageBytes.value) {
+  if (!cacheUsageBytes.value || cacheUsageBytes.value < 50000) { // Ignore < 50KB overhead
     const anyCached = Object.values(cachedModels).some(v => v)
     return anyCached ? '~45 MB' : '0 MB'
   }
@@ -322,21 +327,14 @@ async function handlePreload() {
   statusMessage.value = `Downloading ${currentModelMeta.value.name.split(' ')[0]} weights (${currentModelMeta.value.size})...`
 
   try {
-    if (currentModelMeta.value.engine === 'rmbg') {
-      await preloadRMBG((progress) => {
-        if (progress && (progress.progress !== undefined || progress.pct !== undefined)) {
-          const raw = progress.pct !== undefined ? progress.pct : progress.progress
-          const pct = Math.min(100, Math.max(0, Math.round(raw > 1 ? raw : raw * 100)))
-          downloadProgress.percent = pct
-          statusMessage.value = `Downloading RMBG-1.4 weights: ${pct}%...`
-        }
-      })
-    } else {
-      await imglyPreload({
-        model: selectedModel.value,
-        device: selectedDevice.value
-      })
-    }
+    await preloadTransformersModel(selectedModel.value, currentModelMeta.value.dtype, currentModelMeta.value.disableOptimization, selectedDevice.value, (progress) => {
+      if (progress && (progress.progress !== undefined || progress.pct !== undefined)) {
+        const raw = progress.pct !== undefined ? progress.pct : progress.progress
+        const pct = Math.min(100, Math.max(0, Math.round(raw > 1 ? raw : raw * 100)))
+        downloadProgress.percent = pct
+        statusMessage.value = `Downloading ${currentModelMeta.value.name.split(' ')[0]} weights: ${pct}%...`
+      }
+    })
     cachedModels[selectedModel.value] = true
     localStorage.setItem(`purecut_cached_${selectedModel.value}`, 'true')
     statusMessage.value = 'AI Model cached & ready!'
@@ -418,31 +416,15 @@ async function processImage(file) {
   try {
     let rawMaskBlob = null
 
-    if (currentModelMeta.value.engine === 'rmbg') {
-      // Run State-of-the-Art BRIA RMBG-1.4
-      const result = await runRMBG(file, selectedDevice.value, (p) => {
-        if (p.message) statusMessage.value = p.message
-        if (p && (p.progress !== undefined || p.pct !== undefined)) {
-          const raw = p.pct !== undefined ? p.pct : p.progress
-          downloadProgress.percent = Math.min(100, Math.max(0, Math.round(raw > 1 ? raw : raw * 100)))
-        }
-      })
-      rawMaskBlob = result.maskBlob
-    } else {
-      // Run ISNet (legacy)
-      const result = await runISNet(file, selectedModel.value, selectedDevice.value, (p) => {
-        if (p.message) statusMessage.value = p.message
-        if (p.pct !== undefined || p.progress !== undefined) {
-          const raw = p.pct !== undefined ? p.pct : p.progress
-          const pct = Math.min(100, Math.max(0, Math.round(raw > 1 ? raw : raw * 100)))
-          downloadProgress.isDownloading = true
-          downloadProgress.percent = pct
-          if (p.loadedMB) downloadProgress.loadedMB = p.loadedMB
-          if (p.totalMB) downloadProgress.totalMB = p.totalMB
-        }
-      })
-      rawMaskBlob = result.maskBlob
-    }
+    // Run transformers.js model
+    const result = await runTransformersModel(file, selectedModel.value, currentModelMeta.value.dtype, currentModelMeta.value.disableOptimization, selectedDevice.value, (p) => {
+      if (p.message) statusMessage.value = p.message
+      if (p && (p.progress !== undefined || p.pct !== undefined)) {
+        const raw = p.pct !== undefined ? p.pct : p.progress
+        downloadProgress.percent = Math.min(100, Math.max(0, Math.round(raw > 1 ? raw : raw * 100)))
+      }
+    })
+    rawMaskBlob = result.maskBlob
 
     cachedModels[selectedModel.value] = true
     localStorage.setItem(`purecut_cached_${selectedModel.value}`, 'true')
@@ -483,7 +465,11 @@ async function processImage(file) {
 
     const megapixels = (imageDimensions.width * imageDimensions.height) / 1000000
     telemetry.throughputMps = (megapixels / (elapsed / 1000)).toFixed(2)
-    telemetry.deviceUsed = selectedDevice.value === 'gpu' ? 'WebGPU (Hardware GPU)' : 'WASM SIMD Multi-threaded'
+    const actualDevice = result.deviceUsed || (selectedDevice.value === 'gpu' ? 'webgpu' : 'wasm')
+    telemetry.deviceUsed = actualDevice === 'webgpu' ? 'WebGPU (Hardware GPU)' : 'WASM SIMD Multi-threaded'
+    if (actualDevice === 'wasm' && selectedDevice.value === 'gpu') {
+      selectedDevice.value = 'cpu'
+    }
 
     recompositeCanvas()
     
@@ -497,7 +483,7 @@ async function processImage(file) {
     
   } catch (error) {
     console.error('Processing error:', error)
-    alert('Failed to process image. Try selecting another model or device.')
+    alert(error.message || 'Failed to process image. Try selecting another model or device.')
   } finally {
     isProcessing.value = false
     downloadProgress.isDownloading = false
@@ -590,25 +576,38 @@ function recompositeCanvas(immediateBlob = false) {
     tempMaskCanvas.width = width
     tempMaskCanvas.height = height
     const tempMaskCtx = tempMaskCanvas.getContext('2d', { willReadFrequently: true })
-    if (tuning.feather > 0) {
-      tempMaskCtx.filter = `blur(${tuning.feather}px)`
+    
+    // If trim is used but feather is 0, we need a slight blur to allow morphological edge shifting
+    let applyBlur = tuning.feather;
+    if (tuning.trim !== 0 && applyBlur === 0) {
+      applyBlur = Math.abs(tuning.trim) * 1.5;
     }
+    if (applyBlur > 0) {
+      tempMaskCtx.filter = `blur(${applyBlur}px)`
+    }
+    
     tempMaskCtx.drawImage(maskCanvas, 0, 0)
     const maskData = tempMaskCtx.getImageData(0, 0, width, height)
     const maskPixels = maskData.data
 
     const totalPixels = width * height
     const thresholdVal = tuning.threshold * 255
-    const trimShift = tuning.trim * 15
+    const trimShift = tuning.trim * 20 // scale trim impact
 
     for (let i = 0; i < totalPixels; i++) {
       const idx = i * 4
       let rawAlpha = maskPixels[idx + 3]
 
-      if (trimShift !== 0) {
-        rawAlpha = Math.max(0, Math.min(255, rawAlpha - trimShift))
+      // Trim (Erode/Dilate) via Alpha Level Adjustment
+      if (trimShift > 0) {
+        // Erode: push alpha down, but rescale max back to 255 so the interior remains completely solid
+        rawAlpha = Math.max(0, (rawAlpha - trimShift) * (255 / (255 - trimShift)))
+      } else if (trimShift < 0) {
+        // Dilate: boost alpha to push the edge outwards
+        rawAlpha = Math.min(255, rawAlpha - trimShift)
       }
 
+      // Apply Threshold (Smooth Step)
       let finalAlpha = 0
       if (rawAlpha >= thresholdVal) {
         const range = 255 - thresholdVal
@@ -620,7 +619,7 @@ function recompositeCanvas(immediateBlob = false) {
       imgPixels[idx + 3] = finalAlpha
 
       // De-fringe color halo
-      if (tuning.deFringe && finalAlpha > 0 && finalAlpha < 220) {
+      if (tuning.deFringe && finalAlpha > 0 && finalAlpha < 240) {
         const r = imgPixels[idx]
         const g = imgPixels[idx + 1]
         const b = imgPixels[idx + 2]
@@ -1270,15 +1269,26 @@ function refreshDetectionData() {
   }
 }
 
+function confirmAndProcessImage(file) {
+  if (originalUrl.value) {
+    const choice = window.confirm("An image is already open. Do you want to replace it?\n\n(To open the new image in a new tab instead, please open a new browser tab and paste it there.)")
+    if (choice) {
+      processImage(file)
+    }
+  } else {
+    processImage(file)
+  }
+}
+
 // Event Handlers
 function onFileSelect(e) {
   const file = e.target.files?.[0]
-  if (file) processImage(file)
+  if (file) confirmAndProcessImage(file)
 }
 
 function onDrop(e) {
   const file = e.dataTransfer.files?.[0]
-  if (file) processImage(file)
+  if (file) confirmAndProcessImage(file)
 }
 
 function onPaste(e) {
@@ -1288,7 +1298,7 @@ function onPaste(e) {
     if (item.type.startsWith('image/')) {
       const file = item.getAsFile()
       if (file) {
-        processImage(file)
+        confirmAndProcessImage(file)
         break
       }
     }
@@ -1410,17 +1420,36 @@ onUnmounted(() => {
           <button class="version-badge" @click="showInfoModal = true" title="Version, Changelog & Roadmap">
             v{{ appVersion }}
           </button>
+          <button 
+            class="btn-benchmark-nav" 
+            @click="showBenchmarkPage = true" 
+            title="Inspect Model Benchmark & Cutout Comparison for Test Image"
+          >
+            <Sparkles :size="11" /> Model Showcase
+          </button>
         </div>
       </div>
 
       <!-- Center: Model Status & Preload Pill -->
       <div class="model-status-bar">
+        <div class="model-picker-wrapper">
+          <select 
+            class="model-picker-select" 
+            v-model="selectedModel" 
+            :disabled="isProcessing || isPreloading"
+          >
+            <option v-for="model in modelOptions" :key="model.id" :value="model.id">
+              {{ model.name }} ({{ model.size }})
+            </option>
+          </select>
+          <div class="model-picker-chevron">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </div>
+        </div>
+
         <div class="model-indicator" :class="{ 'is-cached': currentModelCached }">
           <span class="status-dot"></span>
-          <span class="model-label">
-            {{ currentModelMeta.name.split(' ')[0] }} ({{ currentModelMeta.size }}):
-            <strong>{{ currentModelCached ? 'Cached & Ready' : 'Not Downloaded' }}</strong>
-          </span>
+          <span class="model-status-text">{{ currentModelCached ? 'Ready' : 'Not Downloaded' }}</span>
         </div>
 
         <button
@@ -1463,6 +1492,14 @@ onUnmounted(() => {
         </button>
 
         <div class="mode-toggle-group">
+          <button
+            class="btn-settings"
+            @click="showSettingsModal = true"
+            title="App Settings"
+            style="background: transparent; border: none; color: #94a3b8; cursor: pointer; display: flex; align-items: center; padding: 0 6px; margin-right: 4px;"
+          >
+            <Settings :size="14" />
+          </button>
           <button
             :class="['mode-btn', { active: userMode === 'standard' }]"
             @click="userMode = 'standard'"
@@ -2131,6 +2168,11 @@ onUnmounted(() => {
     </main>
 
     <!-- Version / Changelog / Roadmap / Storage Modal -->
+    <SettingsModal
+      :show="showSettingsModal"
+      @close="showSettingsModal = false"
+    />
+
     <InfoModal
       :show="showInfoModal"
       :formatted-cache-usage="formattedCacheUsage"
@@ -2139,6 +2181,12 @@ onUnmounted(() => {
       :is-processing="isProcessing"
       @close="showInfoModal = false"
       @clear-cache="clearAllCache"
+    />
+
+    <!-- Giselle Model Benchmark Showcase Page -->
+    <ShowcaseModal
+      v-if="showBenchmarkPage"
+      @back="showBenchmarkPage = false"
     />
   </div>
 </template>
@@ -2258,6 +2306,57 @@ html, body {
 
 .model-indicator.is-cached {
   color: #34d399;
+}
+
+.model-picker-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.model-picker-select {
+  appearance: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 3px 26px 3px 10px;
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.model-picker-select:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.model-picker-select:focus {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.2);
+}
+
+.model-picker-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.model-picker-select option {
+  background: #1e293b;
+  color: #f8fafc;
+}
+
+.model-picker-chevron {
+  position: absolute;
+  right: 8px;
+  pointer-events: none;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn-preload {
@@ -2481,6 +2580,54 @@ html, body {
   margin-top: 12px;
   font-size: 11.5px;
   color: #64748b;
+}
+
+.demo-showcase-trigger {
+  margin-top: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-size: 12px;
+  color: #a5b4fc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.demo-showcase-trigger:hover {
+  background: rgba(99, 102, 241, 0.25);
+  border-color: #6366f1;
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.demo-showcase-trigger strong {
+  color: #ffffff;
+}
+
+.btn-benchmark-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-left: 4px;
+  transition: all 0.15s ease;
+}
+
+.btn-benchmark-nav:hover {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: #38bdf8;
+  color: #ffffff;
 }
 
 kbd {
