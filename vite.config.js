@@ -6,6 +6,10 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     port: 5173,
-    open: true
+    open: true,
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp'
+    }
   }
 })
