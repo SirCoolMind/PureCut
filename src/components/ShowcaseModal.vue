@@ -16,6 +16,8 @@ import {
 
 const emit = defineEmits(['back', 'open-in-studio'])
 
+const baseUrl = import.meta.env.BASE_URL || './'
+
 const activeModel = ref('rmbg') // 'rmbg' | 'isnet' | 'modnet'
 const sliderPos = ref(50)
 const backdropBg = ref('checkerboard') // 'checkerboard' | 'white' | 'dark'
@@ -29,7 +31,7 @@ const modelsData = {
     architecture: 'Segformer / BiSeNet Backbone (43 MB)',
     rating: '9.8 / 10',
     executionTime: '~6.8s (WASM SIMD) / ~1.8s (WebGPU)',
-    cutoutSrc: '/giselle-rmbg.png',
+    cutoutSrc: `${baseUrl}giselle-rmbg.png`,
     pros: [
       'Preserves complete seated body pose with zero gaps',
       'Flawless separation of oversized grey sweatpants and denim boots',
@@ -49,7 +51,7 @@ const modelsData = {
     architecture: 'Dichotomous Image Segmentation (U-Net DIS)',
     rating: '8.7 / 10',
     executionTime: '~2.8s (WASM SIMD) / ~0.9s (WebGPU)',
-    cutoutSrc: '/giselle-isnet.png',
+    cutoutSrc: `${baseUrl}giselle-isnet.png`,
     pros: [
       'Very fast and memory-efficient (zero WASM memory leaks)',
       'Sharp face, hair, cap, and boot contours',
@@ -69,7 +71,7 @@ const modelsData = {
     architecture: 'Objective-Decomposed Portrait Matting',
     rating: '7.0 / 10 (Pose Dependent)',
     executionTime: '~4.5s (WASM SIMD) / ~0.7s (WebGPU)',
-    cutoutSrc: '/giselle-modnet.png',
+    cutoutSrc: `${baseUrl}giselle-modnet.png`,
     pros: [
       'Ultra-lightweight (only 20 MB download)',
       'Clean alpha gradient along hair strands and head silhouette',
@@ -180,7 +182,7 @@ function downloadCutout(modelKey) {
               :style="{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }"
             >
               <img
-                src="/giselle-original.jpg"
+                :src="`${baseUrl}giselle-original.jpg`"
                 alt="Original Photo"
                 class="viewport-media original-layer"
               />
@@ -295,7 +297,7 @@ function downloadCutout(modelKey) {
               <span class="gcard-tag">1080 × 1440</span>
             </div>
             <div class="gcard-media-box bg-dark">
-              <img src="/giselle-original.jpg" alt="Original Giselle Photo" />
+              <img :src="`${baseUrl}giselle-original.jpg`" alt="Original Giselle Photo" />
             </div>
             <div class="gcard-caption">
               Seated pose inside elevator with brushed steel walls, denim boots, and loose sweatpants.
@@ -309,7 +311,7 @@ function downloadCutout(modelKey) {
               <span class="gcard-tag tag-sota">SOTA Cutout</span>
             </div>
             <div :class="['gcard-media-box', `bg-${backdropBg}`]">
-              <img src="/giselle-rmbg.png" alt="RMBG-1.4 Cutout" />
+              <img :src="`${baseUrl}giselle-rmbg.png`" alt="RMBG-1.4 Cutout" />
             </div>
             <div class="gcard-caption">
               <strong>100% full pose preserved</strong>: Boots, pants, black long-sleeve, hair strands, and cap.
@@ -323,7 +325,7 @@ function downloadCutout(modelKey) {
               <span class="gcard-tag tag-isnet">Salient Cutout</span>
             </div>
             <div :class="['gcard-media-box', `bg-${backdropBg}`]">
-              <img src="/giselle-isnet.png" alt="IS-Net Cutout" />
+              <img :src="`${baseUrl}giselle-isnet.png`" alt="IS-Net Cutout" />
             </div>
             <div class="gcard-caption">
               Clean head and boot boundaries. Slight alpha feathering on grey sweatpants.
@@ -337,7 +339,7 @@ function downloadCutout(modelKey) {
               <span class="gcard-tag tag-modnet">Portrait Matting</span>
             </div>
             <div :class="['gcard-media-box', `bg-${backdropBg}`]">
-              <img src="/giselle-modnet.png" alt="MODNet Cutout" />
+              <img :src="`${baseUrl}giselle-modnet.png`" alt="MODNet Cutout" />
             </div>
             <div class="gcard-caption">
               Portrait model captures upper face and lower boots; torso omitted due to pose orientation.
