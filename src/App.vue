@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch, defineAsyncComponent } from 'vue'
 import { runTransformersModel, preloadTransformersModel, resetLoadedModels } from './aiEngine.js'
 import {
   UploadCloud,
@@ -40,10 +40,12 @@ import {
   Settings
 } from 'lucide-vue-next'
 import { appVersion, modelOptions } from './constants.js'
-import InfoModal from './components/InfoModal.vue'
-import SettingsModal from './components/SettingsModal.vue'
-import ShowcaseModal from './components/ShowcaseModal.vue'
 import { detectSubjects, magicWandFloodFill } from './detectionEngine.js'
+
+// Lazy-loaded modals for optimal initial bundle size and instantaneous first load
+const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
+const SettingsModal = defineAsyncComponent(() => import('./components/SettingsModal.vue'))
+const ShowcaseModal = defineAsyncComponent(() => import('./components/ShowcaseModal.vue'))
 
 // --- State ---
 const showBenchmarkPage = ref(false)
