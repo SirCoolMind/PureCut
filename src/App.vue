@@ -37,7 +37,8 @@ import {
   Eye,
   EyeOff,
   Sparkle,
-  Settings
+  Settings,
+  Type
 } from 'lucide-vue-next'
 import { appVersion, modelOptions } from './constants.js'
 import { detectSubjects, magicWandFloodFill } from './detectionEngine.js'
@@ -219,6 +220,24 @@ function resetBrowserZoom() {
   alert(`To reset your browser zoom to 100%, press ${shortcut} on your keyboard.`)
 }
 
+// Accessibility Font Size & Interface Scaling
+const fontSize = ref(typeof localStorage !== 'undefined' ? (localStorage.getItem('purecut_font_size') || 'normal') : 'normal')
+function applyFontSize(size) {
+  fontSize.value = size
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('purecut_font_size', size)
+  }
+  if (typeof document !== 'undefined') {
+    document.documentElement.setAttribute('data-font-size', size)
+  }
+}
+
+function cycleFontSize() {
+  const sizes = ['compact', 'normal', 'medium', 'large']
+  const nextIdx = (sizes.indexOf(fontSize.value) + 1) % sizes.length
+  applyFontSize(sizes[nextIdx])
+}
+
 const sliderPosition = ref(50)
 const previewBg = ref('checkerboard') // 'checkerboard', 'white', 'black', 'gradient'
 const copied = ref(false)
@@ -236,6 +255,9 @@ const tuning = reactive({
 
 // Modal State
 const showInfoModal = ref(false)
+const showModelChangePrompt = ref(false)
+const pendingModelId = ref(null)
+const dontAskModelChangeAgain = ref(false)
 
 const cacheUsageBytes = ref(0)
 const isClearingCache = ref(false)
@@ -490,6 +512,46 @@ async function processImage(file) {
     isProcessing.value = false
     downloadProgress.isDownloading = false
   }
+}
+
+// Model change confirmation logic
+function handleModelSelectChange(e) {
+  const newModelId = e.target.value
+  if (!originalUrl.value || !currentFileBlob.value) {
+    selectedModel.value = newModelId
+    return
+  }
+  const promptPref = localStorage.getItem('purecut_prompt_model_change')
+  const shouldPrompt = promptPref === null ? true : promptPref === 'true'
+  if (!shouldPrompt) {
+    selectedModel.value = newModelId
+    reRunModel()
+    return
+  }
+  // Prompt the user
+  pendingModelId.value = newModelId
+  dontAskModelChangeAgain.value = false
+  // Revert select display until confirmed
+  e.target.value = selectedModel.value
+  showModelChangePrompt.value = true
+}
+function confirmModelRerun() {
+  if (dontAskModelChangeAgain.value) {
+    localStorage.setItem('purecut_prompt_model_change', 'false')
+  }
+  if (pendingModelId.value) {
+    selectedModel.value = pendingModelId.value
+  }
+  showModelChangePrompt.value = false
+  pendingModelId.value = null
+  reRunModel()
+}
+function cancelModelRerun() {
+  if (dontAskModelChangeAgain.value) {
+    localStorage.setItem('purecut_prompt_model_change', 'false')
+  }
+  showModelChangePrompt.value = false
+  pendingModelId.value = null
 }
 
 // Re-run AI model
@@ -1388,6 +1450,7 @@ watch(activeTool, (newTool) => {
 })
 
 onMounted(() => {
+  applyFontSize(fontSize.value)
   checkModelCacheStatus()
   window.addEventListener('paste', onPaste)
   window.addEventListener('keydown', onKeyDown)
@@ -1437,8 +1500,9 @@ onUnmounted(() => {
         <div class="model-picker-wrapper">
           <select 
             class="model-picker-select" 
-            v-model="selectedModel" 
+            :value="selectedModel"
             :disabled="isProcessing || isPreloading"
+            @change="handleModelSelectChange"
           >
             <option v-for="model in modelOptions" :key="model.id" :value="model.id">
               {{ model.name }} ({{ model.size }})
@@ -1449,9 +1513,9 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="model-indicator" :class="{ 'is-cached': currentModelCached }">
+        <div class="model-indicator" :class="{ 'is-cached': currentModelCached }" :title="currentModelCached ? 'Model cached locally in browser' : 'Model weights not downloaded yet'">
           <span class="status-dot"></span>
-          <span class="model-status-text">{{ currentModelCached ? 'Ready' : 'Not Downloaded' }}</span>
+          <span class="model-status-text">{{ currentModelCached ? 'Ready' : 'Not Cached' }}</span>
         </div>
 
         <button
@@ -1459,9 +1523,10 @@ onUnmounted(() => {
           class="btn-preload"
           :disabled="isPreloading || isProcessing"
           @click="handlePreload"
+          :title="isPreloading ? 'Downloading weights...' : 'Preload model weights now'"
         >
           <RefreshCw :size="11" :class="{ spin: isPreloading }" />
-          {{ isPreloading ? 'Preloading...' : 'Preload' }}
+          <span class="btn-preload-text">{{ isPreloading ? 'Loading...' : 'Preload' }}</span>
         </button>
 
         <!-- Cache storage size indicator & clear cache trigger -->
@@ -1495,9 +1560,17 @@ onUnmounted(() => {
 
         <div class="mode-toggle-group">
           <button
+            class="btn-font-scale"
+            @click="cycleFontSize"
+            :title="`Interface Font Size: ${fontSize.toUpperCase()} (Click to cycle: Compact, Standard, Medium, Large)`"
+          >
+            <Type :size="13" />
+            <span class="font-scale-tag">{{ fontSize === 'compact' ? 'S' : fontSize === 'normal' ? 'M' : fontSize === 'medium' ? 'L' : 'XL' }}</span>
+          </button>
+          <button
             class="btn-settings"
             @click="showSettingsModal = true"
-            title="App Settings"
+            title="App Settings & Accessibility"
             style="background: transparent; border: none; color: #94a3b8; cursor: pointer; display: flex; align-items: center; padding: 0 6px; margin-right: 4px;"
           >
             <Settings :size="14" />
@@ -1618,16 +1691,20 @@ onUnmounted(() => {
           <!-- Top Info & Tool Selector Bar -->
           <div class="stage-header">
             <div class="meta-tags">
-              <span class="tag file-tag"><ImageIcon :size="13" /> {{ fileName }}</span>
-              <span class="tag">{{ imageDimensions.width }} × {{ imageDimensions.height }}px</span>
-              <span class="tag">{{ fileSize }}</span>
+              <span class="tag file-tag" :title="fileName">
+                <ImageIcon :size="13" />
+                <span class="file-tag-name">{{ fileName }}</span>
+              </span>
+              <span class="tag info-combined-tag" :title="`Dimensions: ${imageDimensions.width} × ${imageDimensions.height}px | Size: ${fileSize}`">
+                {{ imageDimensions.width }}×{{ imageDimensions.height }} · {{ fileSize }}
+              </span>
               <button 
                 v-if="detectedSubjects.length > 1" 
                 :class="['tag subject-tag btn', { active: showSubjectsDrawer }]" 
                 @click="showSubjectsDrawer = !showSubjectsDrawer"
                 title="Toggle subjects panel"
               >
-                <Users :size="13" /> {{ detectedSubjects.length }} Subjects Detected
+                <Users :size="13" /> {{ detectedSubjects.length }} Subjects
               </button>
             </div>
 
@@ -2124,7 +2201,7 @@ onUnmounted(() => {
             <div class="engine-box">
               <div class="engine-row">
                 <label><Layers :size="12" /> Model:</label>
-                <select v-model="selectedModel" class="sidebar-select" @change="reRunModel">
+                <select :value="selectedModel" class="sidebar-select" @change="handleModelSelectChange">
                   <option v-for="m in modelOptions" :key="m.id" :value="m.id">
                     {{ m.name }}
                   </option>
@@ -2169,10 +2246,45 @@ onUnmounted(() => {
       </section>
     </main>
 
+    <!-- Model Change Confirmation Prompt Modal -->
+    <Teleport to="body">
+      <div v-if="showModelChangePrompt" class="modal-overlay" @click.self="cancelModelRerun">
+        <div class="modal-container prompt-modal-container">
+          <div class="modal-header">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <RefreshCw :size="18" class="text-indigo-400" />
+              <h2 class="modal-title">Switch AI Model?</h2>
+            </div>
+            <button class="btn-close" @click="cancelModelRerun">✕</button>
+          </div>
+          <div class="modal-body">
+            <p class="prompt-text">
+              Do you want to re-run background removal on your current image using
+              <strong class="highlight-model">{{ (modelOptions.find(m => m.id === pendingModelId) || {}).name || pendingModelId }}</strong>?
+            </p>
+            <label class="prompt-checkbox-label">
+              <input
+                type="checkbox"
+                v-model="dontAskModelChangeAgain"
+                class="settings-checkbox"
+              />
+              <span>Don't show this prompt again</span>
+            </label>
+          </div>
+          <div class="modal-footer prompt-footer">
+            <button class="btn-cancel" @click="cancelModelRerun">No</button>
+            <button class="btn-confirm" @click="confirmModelRerun">Yes, Re-run</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- Version / Changelog / Roadmap / Storage Modal -->
     <SettingsModal
       :show="showSettingsModal"
       @close="showSettingsModal = false"
+      :current-font-size="fontSize"
+      @update-font-size="applyFontSize"
     />
 
     <InfoModal
@@ -2194,6 +2306,33 @@ onUnmounted(() => {
 </template>
 
 <style>
+/* Global accessibility variables & UI scaling system */
+:root {
+  --ui-zoom: 1;
+  --navbar-height: 48px;
+  --sidebar-width: 310px;
+}
+html[data-font-size="compact"] {
+  --ui-zoom: 0.88;
+  --navbar-height: 44px;
+  --sidebar-width: 290px;
+}
+html[data-font-size="normal"] {
+  --ui-zoom: 1;
+  --navbar-height: 48px;
+  --sidebar-width: 310px;
+}
+html[data-font-size="medium"] {
+  --ui-zoom: 1.15;
+  --navbar-height: 52px;
+  --sidebar-width: 330px;
+}
+html[data-font-size="large"] {
+  --ui-zoom: 1.30;
+  --navbar-height: 56px;
+  --sidebar-width: 20vw;
+}
+
 /* Global resets */
 *, *::before, *::after {
   box-sizing: border-box;
@@ -2203,11 +2342,82 @@ onUnmounted(() => {
 
 html, body {
   height: 100%;
+  width: 100%;
   overflow: hidden; /* Zero page scroll */
   background-color: #080c14;
   color: #f1f5f9;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Scale the entire application UI responsively without breaking layout */
+.app-shell {
+  zoom: var(--ui-zoom, 1);
+  height: calc(100vh / var(--ui-zoom, 1)) !important;
+  width: calc(100vw / var(--ui-zoom, 1)) !important;
+  transition: zoom 0.2s ease;
+}
+/* Modals scale proportionally and remain perfectly centered */
+.modal-container, .info-modal {
+  zoom: var(--ui-zoom, 1);
+  transition: zoom 0.2s ease;
+}
+
+.prompt-modal-container {
+  max-width: 440px !important;
+}
+.prompt-text {
+  font-size: 13.5px;
+  color: #cbd5e1;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+.highlight-model {
+  color: #818cf8;
+  font-weight: 700;
+}
+.prompt-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #94a3b8;
+  cursor: pointer;
+  user-select: none;
+}
+.prompt-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.btn-cancel {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+.btn-confirm {
+  background: #6366f1;
+  border: none;
+  color: white;
+  padding: 6px 16px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-confirm:hover {
+  background: #4f46e5;
 }
 </style>
 
@@ -2222,9 +2432,10 @@ html, body {
   overflow: hidden;
 }
 
-/* Navbar (Compact 48px) */
+/* Navbar (Dynamic accessible height) */
 .navbar {
-  height: 48px;
+  height: var(--navbar-height, 48px);
+  min-height: var(--navbar-height, 48px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2234,6 +2445,7 @@ html, body {
   background: rgba(8, 12, 20, 0.85);
   flex-shrink: 0;
   z-index: 50;
+  transition: height 0.2s ease, min-height 0.2s ease;
 }
 
 .brand {
@@ -2278,11 +2490,13 @@ html, body {
 .model-status-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   background: rgba(255, 255, 255, 0.04);
-  padding: 4px 12px;
+  padding: 4px 10px;
   border-radius: 9999px;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 .model-indicator {
@@ -2449,10 +2663,40 @@ html, body {
 /* Mode Switcher */
 .mode-toggle-group {
   display: flex;
+  align-items: center;
   background: rgba(255, 255, 255, 0.06);
   padding: 2px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.btn-font-scale {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #a5b4fc;
+  padding: 3px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  margin-right: 3px;
+  transition: all 0.2s ease;
+}
+.btn-font-scale:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #ffffff;
+}
+.font-scale-tag {
+  font-size: 9.5px;
+  font-weight: 700;
+  background: #6366f1;
+  color: white;
+  padding: 1px 4px;
+  border-radius: 4px;
+  line-height: 1;
 }
 
 .mode-btn {
@@ -2809,6 +3053,8 @@ kbd {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   flex-shrink: 0;
   position: relative;
   z-index: 10;
@@ -2817,7 +3063,9 @@ kbd {
 .meta-tags {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
+  min-width: 0;
 }
 
 .tag {
@@ -2826,6 +3074,7 @@ kbd {
   padding: 3px 8px;
   border-radius: 5px;
   color: #94a3b8;
+  white-space: nowrap;
 }
 
 .file-tag {
@@ -2834,6 +3083,17 @@ kbd {
   gap: 4px;
   color: #f1f5f9;
   font-weight: 600;
+  max-width: 170px;
+}
+
+.file-tag-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.info-combined-tag {
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
 }
 
 .subject-tag {
@@ -3355,7 +3615,8 @@ kbd {
 
 /* Sidebar Column (Right) */
 .sidebar-column {
-  width: 310px;
+  width: var(--sidebar-width, 310px);
+  max-width: 20vw;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -3367,6 +3628,7 @@ kbd {
   padding: 12px;
   backdrop-filter: blur(12px);
   overflow-y: auto;
+  transition: width 0.2s ease;
 }
 
 .sidebar-header {

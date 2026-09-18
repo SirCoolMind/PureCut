@@ -7,6 +7,14 @@
     <title>PureCut — In-Browser AI Background Remover</title>
     <meta name="description" content="Fast, 100% private in-browser AI image background removal. No accounts, no watermarks." />
     <script src="./coi-serviceworker.js"></script>
+    <script>
+      (function() {
+        try {
+          var saved = localStorage.getItem('purecut_font_size') || 'normal';
+          document.documentElement.setAttribute('data-font-size', saved);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>
