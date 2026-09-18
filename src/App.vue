@@ -258,6 +258,9 @@ const showInfoModal = ref(false)
 const showModelChangePrompt = ref(false)
 const pendingModelId = ref(null)
 const dontAskModelChangeAgain = ref(false)
+const showReplaceImagePrompt = ref(false)
+const pendingNewImageFile = ref(null)
+const pendingNewImageThumbnail = ref(null)
 
 const cacheUsageBytes = ref(0)
 const isClearingCache = ref(false)
@@ -1335,13 +1338,37 @@ function refreshDetectionData() {
 
 function confirmAndProcessImage(file) {
   if (originalUrl.value) {
-    const choice = window.confirm("An image is already open. Do you want to replace it?\n\n(To open the new image in a new tab instead, please open a new browser tab and paste it there.)")
-    if (choice) {
-      processImage(file)
+    pendingNewImageFile.value = file
+    if (pendingNewImageThumbnail.value) {
+      URL.revokeObjectURL(pendingNewImageThumbnail.value)
     }
+    pendingNewImageThumbnail.value = URL.createObjectURL(file)
+    showReplaceImagePrompt.value = true
   } else {
     processImage(file)
   }
+}
+
+function confirmReplaceImage() {
+  const file = pendingNewImageFile.value
+  showReplaceImagePrompt.value = false
+  if (pendingNewImageThumbnail.value) {
+    URL.revokeObjectURL(pendingNewImageThumbnail.value)
+    pendingNewImageThumbnail.value = null
+  }
+  pendingNewImageFile.value = null
+  if (file) {
+    processImage(file)
+  }
+}
+
+function cancelReplaceImage() {
+  showReplaceImagePrompt.value = false
+  if (pendingNewImageThumbnail.value) {
+    URL.revokeObjectURL(pendingNewImageThumbnail.value)
+    pendingNewImageThumbnail.value = null
+  }
+  pendingNewImageFile.value = null
 }
 
 // Event Handlers
@@ -2248,32 +2275,114 @@ onUnmounted(() => {
 
     <!-- Model Change Confirmation Prompt Modal -->
     <Teleport to="body">
-      <div v-if="showModelChangePrompt" class="modal-overlay" @click.self="cancelModelRerun">
-        <div class="modal-container prompt-modal-container">
-          <div class="modal-header">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <RefreshCw :size="18" class="text-indigo-400" />
-              <h2 class="modal-title">Switch AI Model?</h2>
+      <div v-if="showModelChangePrompt" class="prompt-modal-overlay" @click.self="cancelModelRerun">
+        <div class="prompt-modal-card">
+          <!-- Header -->
+          <div class="prompt-modal-header">
+            <div class="prompt-modal-title-wrap">
+              <div class="prompt-icon-badge">
+                <RefreshCw :size="15" />
+              </div>
+              <h2 class="prompt-modal-title">Switch AI Model?</h2>
             </div>
-            <button class="btn-close" @click="cancelModelRerun">✕</button>
+            <button class="prompt-btn-close" @click="cancelModelRerun" title="Cancel">✕</button>
           </div>
-          <div class="modal-body">
-            <p class="prompt-text">
-              Do you want to re-run background removal on your current image using
-              <strong class="highlight-model">{{ (modelOptions.find(m => m.id === pendingModelId) || {}).name || pendingModelId }}</strong>?
+
+          <!-- Body -->
+          <div class="prompt-modal-body">
+            <p class="prompt-modal-message">
+              Rerun the process using
+              <span class="prompt-model-tag">{{ (modelOptions.find(m => m.id === pendingModelId) || {}).name || pendingModelId }}</span>?
             </p>
-            <label class="prompt-checkbox-label">
+
+            <!-- One-liner Checkbox -->
+            <label class="prompt-checkbox-row">
               <input
                 type="checkbox"
                 v-model="dontAskModelChangeAgain"
-                class="settings-checkbox"
+                class="prompt-checkbox"
               />
-              <span>Don't show this prompt again</span>
+              <span class="prompt-checkbox-text">Don't show this prompt again</span>
             </label>
+
+            <!-- Yellow Hint when ticked -->
+            <transition name="fade-hint">
+              <div v-if="dontAskModelChangeAgain" class="prompt-settings-hint">
+                <Settings :size="13" class="hint-settings-icon" />
+                <span>Can be adjusted in Settings <Settings :size="11" class="inline-settings-icon" /></span>
+              </div>
+            </transition>
           </div>
-          <div class="modal-footer prompt-footer">
-            <button class="btn-cancel" @click="cancelModelRerun">No</button>
-            <button class="btn-confirm" @click="confirmModelRerun">Yes, Re-run</button>
+
+          <!-- Footer -->
+          <div class="prompt-modal-footer">
+            <button class="prompt-btn-cancel" @click="cancelModelRerun">No</button>
+            <button class="prompt-btn-confirm" @click="confirmModelRerun">
+              <RefreshCw :size="12" />
+              <span>Yes, Re-run</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Paste / Replace Image Confirmation Prompt Modal -->
+    <Teleport to="body">
+      <div v-if="showReplaceImagePrompt" class="prompt-modal-overlay" @click.self="cancelReplaceImage">
+        <div class="prompt-modal-card">
+          <!-- Header -->
+          <div class="prompt-modal-header">
+            <div class="prompt-modal-title-wrap">
+              <div class="prompt-icon-badge">
+                <ImageIcon :size="15" />
+              </div>
+              <h2 class="prompt-modal-title">Replace Current Image?</h2>
+            </div>
+            <button class="prompt-btn-close" @click="cancelReplaceImage" title="Cancel">✕</button>
+          </div>
+
+          <!-- Body -->
+          <div class="prompt-modal-body">
+            <p class="prompt-modal-message">
+              You pasted a new image. Would you like to discard the current workspace and process this image?
+            </p>
+
+            <!-- Thumbnail & Model Info Card -->
+            <div class="pasted-preview-card">
+              <!-- Top Row: Thumbnail + Model Box (Name & Size inside same box) -->
+              <div class="pasted-top-row">
+                <div class="pasted-thumb-box">
+                  <img :src="pendingNewImageThumbnail" alt="Pasted Thumbnail" class="pasted-thumb-img" />
+                </div>
+                <div class="pasted-model-box">
+                  <div class="pasted-meta-title">Selected AI Model</div>
+                  <div class="pasted-model-card">
+                    <div class="pasted-model-name-line">
+                      <Sparkles :size="13" class="text-indigo-400" />
+                      <span class="pasted-model-name-text">{{ currentModelMeta.name }}</span>
+                    </div>
+                    <div class="pasted-model-size-line">
+                      Size: {{ currentModelMeta.size }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Bottom Row: Filename spanning long under both picture and model box -->
+              <div v-if="pendingNewImageFile" class="pasted-filename-row" :title="`Filename: ${pendingNewImageFile.name || 'clipboard_image.png'}`">
+                <span class="pasted-filename-label">Filename:</span>
+                <span class="pasted-filename-val">{{ pendingNewImageFile.name || 'clipboard_image.png' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="prompt-modal-footer">
+            <button class="prompt-btn-cancel" @click="cancelReplaceImage">Cancel</button>
+            <button class="prompt-btn-confirm" @click="confirmReplaceImage">
+              <Sparkles :size="12" />
+              <span>Replace & Process</span>
+            </button>
           </div>
         </div>
       </div>
@@ -2365,61 +2474,357 @@ html, body, #app {
   transition: zoom 0.2s ease;
 }
 
-.prompt-modal-container {
-  max-width: 440px !important;
-}
-.prompt-text {
-  font-size: 13.5px;
-  color: #cbd5e1;
-  line-height: 1.5;
-  margin-bottom: 16px;
-}
-.highlight-model {
-  color: #818cf8;
-  font-weight: 700;
-}
-.prompt-checkbox-label {
+/* Model Change Confirmation Prompt Modal (Solid Dark UI/UX Card) */
+.prompt-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 7, 13, 0.78);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
+  justify-content: center;
+  z-index: 10000;
+  padding: 16px;
+  animation: promptFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes promptFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.prompt-modal-card {
+  width: 100%;
+  max-width: 520px;
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(99, 102, 241, 0.15);
+  overflow: hidden;
+  animation: promptCardSlide 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes promptCardSlide {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.prompt-modal-header {
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.prompt-modal-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.prompt-icon-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #a5b4fc;
+}
+
+.prompt-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f8fafc;
+  margin: 0;
+}
+
+.prompt-btn-close {
+  background: transparent;
+  border: none;
   color: #94a3b8;
+  font-size: 15px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.prompt-btn-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.prompt-modal-body {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.prompt-modal-message {
+  font-size: 13.5px;
+  color: #cbd5e1;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.prompt-model-tag {
+  color: #818cf8;
+  font-weight: 600;
+  background: rgba(99, 102, 241, 0.12);
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  white-space: nowrap;
+}
+
+/* One-liner checkbox */
+.prompt-checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   cursor: pointer;
   user-select: none;
+  white-space: nowrap;
+  margin-top: 2px;
 }
-.prompt-footer {
+
+.prompt-checkbox {
+  width: 15px;
+  height: 15px;
+  accent-color: #6366f1;
+  cursor: pointer;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.prompt-checkbox-text {
+  font-size: 12.5px;
+  color: #94a3b8;
+  transition: color 0.15s;
+}
+
+.prompt-checkbox-row:hover .prompt-checkbox-text {
+  color: #e2e8f0;
+}
+
+/* Yellow warning/settings hint */
+.prompt-settings-hint {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  padding: 7px 10px;
+  border-radius: 8px;
+  line-height: 1.4;
 }
-.btn-cancel {
-  background: rgba(255, 255, 255, 0.08);
+
+.hint-settings-icon {
+  flex-shrink: 0;
+  color: #fbbf24;
+}
+
+.inline-settings-icon {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 1px;
+  color: #fbbf24;
+}
+
+.fade-hint-enter-active,
+.fade-hint-leave-active {
+  transition: all 0.2s ease;
+}
+
+.fade-hint-enter-from,
+.fade-hint-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* Footer Buttons */
+.prompt-modal-footer {
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.prompt-btn-cancel {
+  background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: #cbd5e1;
-  padding: 6px 14px;
+  padding: 7px 16px;
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
 }
-.btn-cancel:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: white;
+
+.prompt-btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.2);
 }
-.btn-confirm {
-  background: #6366f1;
-  border: none;
+
+.prompt-btn-confirm {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  border: 1px solid rgba(99, 102, 241, 0.4);
   color: white;
-  padding: 6px 16px;
+  padding: 7px 18px;
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.35);
+  transition: all 0.15s;
 }
-.btn-confirm:hover {
-  background: #4f46e5;
+
+.prompt-btn-confirm:hover {
+  background: linear-gradient(135deg, #4f46e5, #4338ca);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.5);
+  transform: translateY(-1px);
+}
+
+/* Pasted Image Preview Card in Modal */
+.pasted-preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.pasted-top-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.pasted-thumb-box {
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #090d16;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.pasted-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.pasted-model-box {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+
+.pasted-meta-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #94a3b8;
+}
+
+.pasted-model-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  padding: 6px 10px;
+  border-radius: 8px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.pasted-model-name-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f8fafc;
+  line-height: 1.3;
+}
+
+.pasted-model-name-text {
+  color: #f1f5f9;
+}
+
+.pasted-model-size-line {
+  font-size: 11.5px;
+  color: #a5b4fc;
+  padding-left: 19px;
+  font-weight: 500;
+}
+
+.pasted-filename-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 6px 10px;
+  width: 100%;
+  font-size: 11.5px;
+  overflow: hidden;
+}
+
+.pasted-filename-label {
+  font-weight: 600;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.pasted-filename-val {
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 </style>
 
