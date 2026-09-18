@@ -46,7 +46,7 @@ const infoTab = ref('changelog') // 'changelog' | 'roadmap' | 'about' | 'storage
         <!-- Modal Header -->
         <div class="modal-header">
           <div class="modal-title">
-            <Sparkles :size="16" />
+            <img src="/purecut-icon.png" alt="PureCut" class="modal-title-img" />
             <span>Pure<strong>Cut</strong></span>
             <span class="modal-version">v{{ appVersion }}</span>
           </div>
@@ -126,7 +126,7 @@ const infoTab = ref('changelog') // 'changelog' | 'roadmap' | 'about' | 'storage
           <div v-if="infoTab === 'about'" class="tab-content about-content">
             <div class="about-logo">
               <div class="about-icon">
-                <Sparkles :size="28" />
+                <img src="/purecut-icon.png" alt="PureCut" class="about-icon-img" />
               </div>
               <div>
                 <h2>PureCut</h2>
@@ -233,7 +233,8 @@ const infoTab = ref('changelog') // 'changelog' | 'roadmap' | 'about' | 'storage
 .info-modal {
   width: 560px;
   max-width: 92vw;
-  max-height: 80vh;
+  min-height: 70vh;
+  max-height: 70vh;
   background: #0f1729;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
@@ -266,6 +267,14 @@ const infoTab = ref('changelog') // 'changelog' | 'roadmap' | 'about' | 'storage
   color: #f1f5f9;
 }
 
+.modal-title-img {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: cover;
+  display: block;
+}
+
 .modal-title strong {
   color: #818cf8;
 }
@@ -274,6 +283,7 @@ const infoTab = ref('changelog') // 'changelog' | 'roadmap' | 'about' | 'storage
   background: rgba(99, 102, 241, 0.15);
   color: #a5b4fc;
   padding: 1px 8px;
+  margin: 2px 0px 0px 0px;
   border-radius: 9999px;
   font-size: 11px;
   font-weight: 600;
@@ -553,15 +563,23 @@ const infoTab = ref('changelog') // 'changelog' | 'roadmap' | 'about' | 'storage
 }
 
 .about-icon {
-  width: 50px;
-  height: 50px;
-  background: linear-gradient(135deg, #6366f1, #a855f7);
+  width: 52px;
+  height: 52px;
   border-radius: 14px;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.35);
+  flex-shrink: 0;
+}
+
+.about-icon-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 14px;
+  display: block;
 }
 
 .about-logo h2 {

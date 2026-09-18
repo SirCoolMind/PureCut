@@ -1478,7 +1478,7 @@ onUnmounted(() => {
     <header class="navbar">
       <div class="brand">
         <div class="brand-icon">
-          <Sparkles :size="18" />
+          <img src="/purecut-icon.png" alt="PureCut" class="brand-img" />
         </div>
         <div class="brand-title">
           <span class="brand-name">Pure<span>Cut</span></span>
@@ -1562,7 +1562,7 @@ onUnmounted(() => {
           <button
             class="btn-font-scale"
             @click="cycleFontSize"
-            :title="`Interface Font Size: ${fontSize.toUpperCase()} (Click to cycle: Compact, Standard, Medium, Large)`"
+            :title="`Interface Font Size: ${fontSize.toUpperCase()} (Click to cycle: Small, Medium, Large, Extra Large)`"
           >
             <Type :size="13" />
             <span class="font-scale-tag">{{ fontSize === 'compact' ? 'S' : fontSize === 'normal' ? 'M' : fontSize === 'medium' ? 'L' : 'XL' }}</span>
@@ -2340,9 +2340,9 @@ html[data-font-size="large"] {
   padding: 0;
 }
 
-html, body {
-  height: 100%;
-  width: 100%;
+html, body, #app {
+  height: 100vh;
+  width: 100vw;
   overflow: hidden; /* Zero page scroll */
   background-color: #080c14;
   color: #f1f5f9;
@@ -2352,6 +2352,8 @@ html, body {
 
 /* Scale the entire application UI responsively without breaking layout */
 .app-shell {
+  width: 100vw;
+  height: 100vh;
   zoom: var(--ui-zoom, 1);
   height: calc(100vh / var(--ui-zoom, 1)) !important;
   width: calc(100vw / var(--ui-zoom, 1)) !important;
@@ -2457,13 +2459,21 @@ html, body {
 .brand-icon {
   width: 28px;
   height: 28px;
-  background: linear-gradient(135deg, #6366f1, #a855f7);
   border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
+  overflow: hidden;
   box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
+  flex-shrink: 0;
+}
+
+.brand-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 7px;
+  display: block;
 }
 
 .brand-title {
@@ -2864,9 +2874,9 @@ html, body {
   font-size: 11px;
   font-weight: 600;
   padding: 3px 8px;
+  margin: 2px 0px 0px 4px;
   border-radius: 6px;
   cursor: pointer;
-  margin-left: 4px;
   transition: all 0.15s ease;
 }
 
@@ -3849,7 +3859,8 @@ kbd {
   background: rgba(99, 102, 241, 0.15);
   color: #a5b4fc;
   border: 1px solid rgba(99, 102, 241, 0.3);
-  padding: 3px 7px 1px 7px;
+  padding: 1px 7px 1px 7px;
+  margin: 2px 0px 0px 0px;
   border-radius: 9999px;
   font-size: 10px;
   font-weight: 600;

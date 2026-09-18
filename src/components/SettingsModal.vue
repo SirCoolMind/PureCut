@@ -10,61 +10,64 @@
       </div>
 
       <div class="modal-body">
-        <!-- Accessibility & UI Scale -->
-        <div class="settings-group">
-          <div class="group-header-row">
-            <label>Interface Font & Scale Size</label>
-            <span class="scale-badge">{{ currentScalePercentage }}</span>
-          </div>
-          <p class="settings-desc">
-            Adjust the text and interface sizing to match your viewing preference. Everything scales responsively without breaking the editor layout.
-          </p>
-          <div class="font-size-selector">
-            <button
-              v-for="opt in fontSizeOptions"
-              :key="opt.key"
-              type="button"
-              :class="['font-size-btn', { active: fontSize === opt.key }]"
-              @click="setFontSize(opt.key)"
-            >
-              <span class="font-size-label">{{ opt.label }}</span>
-              <span class="font-size-sub">{{ opt.percentage }}</span>
-            </button>
+        <!-- Column 1: Display & Font Scaling -->
+        <div class="settings-column">
+          <div class="settings-card">
+            <div class="group-header-row">
+              <label>Interface Font & Scale Size</label>
+              <span class="scale-badge">{{ currentScalePercentage }}</span>
+            </div>
+            <p class="settings-desc">
+              Adjust the text and interface sizing to match your viewing preference. Everything scales responsively without breaking the editor layout.
+            </p>
+            <div class="font-size-selector">
+              <button
+                v-for="opt in fontSizeOptions"
+                :key="opt.key"
+                type="button"
+                :class="['font-size-btn', { active: fontSize === opt.key }]"
+                @click="setFontSize(opt.key)"
+              >
+                <span class="font-size-label">{{ opt.label }}</span>
+                <span class="font-size-sub">{{ opt.percentage }}</span>
+              </button>
+            </div>
           </div>
         </div>
-        <div class="divider"></div>
 
-        <!-- Confirm Model Switch Setting -->
-        <div class="settings-group">
-          <div class="group-header-row">
-            <label for="promptModelChange" style="cursor: pointer;">Model Change Confirmation</label>
-            <input
-              type="checkbox"
-              id="promptModelChange"
-              v-model="promptOnModelChange"
-              class="settings-checkbox"
+        <!-- Column 2: Behavior & Hugging Face Access -->
+        <div class="settings-column">
+          <!-- Confirm Model Switch Setting -->
+          <div class="settings-card">
+            <div class="group-header-row">
+              <label for="promptModelChange" style="cursor: pointer;">Model Change Confirmation</label>
+              <input
+                type="checkbox"
+                id="promptModelChange"
+                v-model="promptOnModelChange"
+                class="settings-checkbox"
+              />
+            </div>
+            <p class="settings-desc">
+              Show a confirmation prompt asking to re-run the cutout before switching AI models when an image is currently loaded.
+            </p>
+          </div>
+
+          <!-- Hugging Face Token -->
+          <div class="settings-card">
+            <label for="hfToken">Hugging Face Access Token (Optional)</label>
+            <p class="settings-desc">
+              Provide your READ access token if you encounter a <code>429 Too Many Requests</code> error when downloading AI models. 
+              This token is saved securely in your browser's local storage and is never sent anywhere except directly to Hugging Face.
+            </p>
+            <input 
+              type="password" 
+              id="hfToken" 
+              v-model="token" 
+              placeholder="hf_..." 
+              class="settings-input"
             />
           </div>
-          <p class="settings-desc">
-            Show a confirmation prompt asking to re-run the cutout before switching AI models when an image is currently loaded.
-          </p>
-        </div>
-        <div class="divider"></div>
-
-        <!-- Hugging Face Token -->
-        <div class="settings-group">
-          <label for="hfToken">Hugging Face Access Token (Optional)</label>
-          <p class="settings-desc">
-            Provide your READ access token if you encounter a <code>429 Too Many Requests</code> error when downloading AI models. 
-            This token is saved securely in your browser's local storage and is never sent anywhere except directly to Hugging Face.
-          </p>
-          <input 
-            type="password" 
-            id="hfToken" 
-            v-model="token" 
-            placeholder="hf_..." 
-            class="settings-input"
-          />
         </div>
       </div>
 
@@ -93,10 +96,10 @@ const fontSize = ref(props.currentFontSize || 'normal')
 const promptOnModelChange = ref(true)
 
 const fontSizeOptions = [
-  { key: 'compact', label: 'Compact', percentage: '88%' },
-  { key: 'normal', label: 'Standard', percentage: '100%' },
-  { key: 'medium', label: 'Medium', percentage: '115%' },
-  { key: 'large', label: 'Large', percentage: '130%' }
+  { key: 'compact', label: 'Small', percentage: '88%' },
+  { key: 'normal', label: 'Medium', percentage: '100%' },
+  { key: 'medium', label: 'Large', percentage: '115%' },
+  { key: 'large', label: 'Extra Large', percentage: '130%' }
 ]
 const currentScalePercentage = computed(() => {
   const opt = fontSizeOptions.find(o => o.key === fontSize.value)
@@ -139,24 +142,31 @@ function save() {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: 16px;
+  box-sizing: border-box;
 }
+
 .modal-container {
   background: #1e293b;
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
   width: 100%;
   max-width: 500px;
-  box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+  max-height: calc(88vh / var(--ui-zoom, 1));
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  transition: max-width 0.25s ease, width 0.25s ease;
 }
+
 .modal-header {
-  padding: 18px 24px;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 16px 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 .modal-title {
   font-size: 16px;
@@ -177,23 +187,58 @@ function save() {
 .btn-close:hover {
   color: white;
 }
+
 .modal-body {
-  padding: 22px 24px;
+  padding: 20px 22px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
+  overflow-y: auto;
+  overflow-x: auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
-.settings-group {
+
+/* Custom scrollbar */
+.modal-body::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.modal-body::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.4);
+  border-radius: 4px;
+}
+.modal-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.5);
+}
+
+.settings-column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
+.settings-card {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 14px 16px;
 }
+
 .group-header-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
-.settings-group label {
+.settings-card label {
   font-size: 13.5px;
   font-weight: 600;
   color: #e2e8f0;
@@ -214,7 +259,7 @@ function save() {
   margin: 0 0 4px 0;
 }
 .settings-desc code {
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   padding: 2px 4px;
   border-radius: 4px;
   color: #fca5a5;
@@ -252,8 +297,9 @@ function save() {
   box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
 }
 .font-size-label {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
+  text-align: center;
 }
 .font-size-sub {
   font-size: 10.5px;
@@ -262,14 +308,10 @@ function save() {
 .font-size-btn.active .font-size-sub {
   color: #c7d2fe;
 }
-.divider {
-  height: 1px;
-  background: rgba(255, 255, 255, 0.08);
-}
 
 .settings-input {
   background: #0f172a;
-  border: 1px solid rgba(255,255,255,0.2);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
   padding: 10px 14px;
   color: white;
@@ -287,10 +329,11 @@ function save() {
   cursor: pointer;
 }
 .modal-footer {
-  padding: 14px 24px;
-  border-top: 1px solid rgba(255,255,255,0.08);
+  padding: 12px 22px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 .btn-primary {
   background: #6366f1;
@@ -305,5 +348,35 @@ function save() {
 }
 .btn-primary:hover {
   background: #4f46e5;
+}
+
+/* Large & Extra Large Multi-Column & Horizontal Scroll Rules */
+/* Entire selector is wrapped inside :global() to avoid Vue SFC compiler stripping descendant selectors */
+:global(html[data-font-size="medium"] .modal-container),
+:global(html[data-font-size="large"] .modal-container) {
+  max-width: 820px;
+}
+
+:global(html[data-font-size="medium"] .modal-body),
+:global(html[data-font-size="large"] .modal-body) {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 16px;
+  overflow-x: auto;
+  overflow-y: auto;
+  align-items: stretch;
+}
+
+:global(html[data-font-size="medium"] .settings-column),
+:global(html[data-font-size="large"] .settings-column) {
+  flex: 0 0 370px;
+  min-width: 340px;
+  max-width: 400px;
+}
+
+:global(html[data-font-size="medium"] .font-size-selector),
+:global(html[data-font-size="large"] .font-size-selector) {
+  grid-template-columns: repeat(2, 1fr);
 }
 </style>
