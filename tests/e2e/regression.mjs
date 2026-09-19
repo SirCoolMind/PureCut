@@ -287,21 +287,35 @@ async function main() {
   const noise = (text) => BENIGN_NOISE.some((re) => re.test(text))
   const inferenceSkipped = results.some((r) => r.skipped)
 
+  const realNotFound = notFound.filter((u) => !noise(u))
+  const realFailed = failedRequests.filter((u) => !noise(u))
+
+  // A "Failed to load resource" console entry does not include the URL, so it
+  // cannot be matched against the allowlist directly. Attribute generic resource
+  // errors to benign causes ONLY when we actually observed a benign 404 and no
+  // non-benign one. Otherwise they stay, and fail the run.
+  const genericResourceErrorIsExplained = notFound.length > 0 && realNotFound.length === 0
+
   const ignoredErrors = consoleErrors.filter(noise)
+  const suppressedGeneric = genericResourceErrorIsExplained
+    ? consoleErrors.filter((e) => /Failed to load resource/i.test(e) && !noise(e))
+    : []
   const realErrors = consoleErrors.filter((e) => {
     if (noise(e)) return false
+    if (genericResourceErrorIsExplained && /Failed to load resource/i.test(e)) return false
     // If inference could not run at all, model-download errors are a symptom of
     // the environment rather than a regression.
     if (inferenceSkipped && MODEL_FETCH_FAILURE.test(e)) return false
     return true
   })
-  const realNotFound = notFound.filter((u) => !noise(u))
-  const realFailed = failedRequests.filter((u) => !noise(u))
 
-  const ignored = [...new Set([...ignoredErrors, ...notFound, ...failedRequests])]
+  const ignored = [...new Set([...ignoredErrors, ...suppressedGeneric, ...notFound, ...failedRequests])]
   if (ignored.length) {
     console.log('\n  Ignored known-benign network noise (does not affect the app outcome):')
     for (const item of ignored) console.log(`    ${item}`)
+    if (suppressedGeneric.length) {
+      console.log('    (generic "Failed to load resource" entries above are attributed to these benign 404s)')
+    }
   }
   if (inferenceSkipped) {
     console.log('\n  Inference was skipped, so model-download errors are not counted.')

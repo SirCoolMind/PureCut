@@ -42,7 +42,8 @@ import {
 } from 'lucide-vue-next'
 import { appVersion, modelOptions } from './constants.js'
 import { detectSubjects, magicWandFloodFill, extractMaskContourSegments } from './detectionEngine.js'
-import { STORAGE_KEYS, cachedModelKey, FONT_SIZES, DEFAULT_FONT_SIZE } from './core/storageKeys.js'
+import { STORAGE_KEYS, cachedModelKey } from './core/storageKeys.js'
+import { useDisplayScale } from './composables/useDisplayScale.js'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -189,52 +190,16 @@ function onPanEnd() {
   isPanning.value = false
 }
 
-// Browser Page Zoom Detection & Reset State
-const browserZoomLevel = ref(100)
-const isBrowserZoomed = computed(() => browserZoomLevel.value !== 100)
-
-function updateBrowserZoom() {
-  if (typeof window === 'undefined') return
-  let ratio = 1
-  if (window.visualViewport && window.visualViewport.scale && window.visualViewport.scale !== 1) {
-    ratio = window.visualViewport.scale
-  } else if (window.outerWidth && window.innerWidth) {
-    // Zoom in browser scales window.innerWidth relative to outerWidth
-    const calculated = window.outerWidth / window.innerWidth
-    if (Math.abs(calculated - 1) > 0.05) {
-      ratio = calculated
-    }
-  }
-  browserZoomLevel.value = Math.round(ratio * 100)
-}
-
-function resetBrowserZoom() {
-  // If pinch/visual viewport zoomed, reset scroll and notify
-  if (window.visualViewport) {
-    window.scrollTo(0, 0)
-  }
-  // For standard browser zoom, prompt shortcut
-  const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
-  const shortcut = isMac ? 'Cmd + 0' : 'Ctrl + 0'
-  alert(`To reset your browser zoom to 100%, press ${shortcut} on your keyboard.`)
-}
-
-// Accessibility Font Size & Interface Scaling
-const fontSize = ref(typeof localStorage !== 'undefined' ? (localStorage.getItem(STORAGE_KEYS.fontSize) || DEFAULT_FONT_SIZE) : 'normal')
-function applyFontSize(size) {
-  fontSize.value = size
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(STORAGE_KEYS.fontSize, size)
-  }
-  if (typeof document !== 'undefined') {
-    document.documentElement.setAttribute('data-font-size', size)
-  }
-}
-
-function cycleFontSize() {
-  const nextIdx = (FONT_SIZES.findIndex(s => s === fontSize.value) + 1) % FONT_SIZES.length
-  applyFontSize(FONT_SIZES[nextIdx])
-}
+// Display scaling: font size (persisted) and browser zoom. See useDisplayScale.
+const {
+  fontSize,
+  applyFontSize,
+  cycleFontSize,
+  browserZoomLevel,
+  isBrowserZoomed,
+  updateBrowserZoom,
+  resetBrowserZoom
+} = useDisplayScale()
 
 const sliderPosition = ref(50)
 const previewBg = ref('checkerboard') // 'checkerboard', 'white', 'black', 'gradient'
