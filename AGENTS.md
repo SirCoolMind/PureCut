@@ -26,25 +26,30 @@ TypeScript is pinned to **5.x on purpose.** `vue-tsc` resolves
 upgrading TS breaks `npm run typecheck` with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
 Do not bump TypeScript past 5 until vue-tsc supports TS 7.
 
-There is currently **no test runner wired to npm.** Playwright is installed as a
-devDependency, but the ad-hoc scripts in the repo root are not integrated and
-are mid-migration into `tests/`. Do not assume they pass.
+`npm run test:regression` is the structural safety net: a Playwright suite
+(`tests/e2e/regression.mjs`, 61 checks) that needs the dev server on :5173 and
+clicks through the whole app, including inference. Run it before and after any
+structural change. It catches a lost element or a dead handler, but **not** lost
+styling, so pair it with a visual check whenever markup moves between files.
+`test.cjs` still cannot run (no `puppeteer` dependency) and `playwright-test.mjs`
+/ `test-showcase.mjs` still point at a hardcoded path outside this repo.
 
 ## Architecture
 
 | Module | Role |
 | --- | --- |
-| `src/App.vue` | The application shell: the wiring block, `getCanvasCoords`, `reset`, `onKeyDown` and the lifecycle hooks, plus whatever markup has not been extracted yet. See the map below before reading it end-to-end. |
+| `src/App.vue` | The application shell: the composable wiring block, the four function refs, `getCanvasCoords`, `reset`, `onKeyDown` and the lifecycle hooks, plus the template that composes the components below. ~610 lines (script ~420, template ~185). |
 | `src/aiEngine.js` | Transformers.js wrapper. Model loading, device selection (WebGPU vs WASM), and the WebGPU→WASM fallback. |
 | `src/detectionEngine.js` | Pure pixel analysis: connected-component subject detection, magic-wand flood fill, mask contour extraction. No Vue, no DOM. |
 | `src/constants.js` | `appVersion`, `modelOptions`, `changelog`, `roadmap`. |
-| `src/components/*.vue` | Three lazy-loaded modals (Info / Settings / Showcase). Dumb props + emits. |
-| `src/composables/*.ts` | `setup()`-scope state and behaviour, one concern per composable. Dependencies arrive as refs/callbacks rather than imports, so each module's signature is its whole contract. Currently `useDisplayScale`, `useWorkspaceUi`, `useZoomPan`, `useTelemetry`, `useUndoRedo`, `useImageInput`, `useOutlineOverlay`, `useSubjects`. |
-| `src/core/*.ts` | Framework-free modules: no Vue, no DOM side effects. Must be unit-testable in isolation. Currently `storageKeys.ts` and `canvasStore.ts`. |
+| `src/components/*.vue` | The view layer, one concern per file: `Navbar`, `ModelStatusBar`, `UploadHero`, `ProcessingOverlay`, `StageHeader`, `CanvasViewport`, `StageFooter`, `TuningSidebar`, `SubjectsDrawer`, `ZoomToolbar`, `ModelChangePrompt`, `ReplaceImagePrompt`, plus the three lazy-loaded modals (Info / Settings / Showcase). Dumb props + emits; all state stays in `App.vue`. |
+| `src/composables/*.ts` | `setup()`-scope state and behaviour, one concern per composable. Dependencies arrive as refs/callbacks rather than imports, so each module's signature is its whole contract: `useDisplayScale`, `useWorkspaceUi`, `useZoomPan`, `useTelemetry`, `useUndoRedo`, `useImageInput`, `useOutlineOverlay`, `useSubjects`, `useBrush`, `useSelectionOverlay`, `useSelectionTools`, `useCompositor`, `useModelCache`, `useProcessing`. |
+| `src/core/*.ts` | Framework-free modules: no Vue, no DOM side effects. Must be unit-testable in isolation. Currently `storageKeys.ts`, `canvasStore.ts`, `format.ts`. |
+| `scripts/context-report.mjs` | The size budget tool: per-file lines/tokens, plus a per-block breakdown for oversized `.vue` files. |
 
-> **Note:** the refactor moves code out of `App.vue` into `src/composables/`
-> (state + logic per concern) and `src/core/` (framework-free helpers). Prefer
-> those files over `App.vue`, and update this table as the module list grows.
+> **Note:** the refactor is done moving code out of `App.vue` — logic lives in
+> `src/composables/`, helpers in `src/core/`, markup in `src/components/`.
+> `App.vue` is now the wiring plus the template; prefer the extracted files.
 >
 > `src/core/canvasStore.ts` is the one deliberate exception to "no DOM": it owns
 > the `HTMLCanvasElement` / `CanvasRenderingContext2D` handles as **live ES module
@@ -56,44 +61,38 @@ that mask canvas in place → `recompositeCanvas()` applies threshold / trim /
 de-fringe and exports a PNG blob → undo snapshots and subject detection both
 branch off the same mask canvas.
 
-## Where to edit what (`src/App.vue` line ranges — STALE, verify first)
+## Where things live
 
-These ranges were taken from the 4404-line pre-refactor `App.vue` and were **not**
-kept in sync as composables moved out, so most numbers below are now wrong. Treat
-the table as an index of what exists, and confirm any line number with a search
-before relying on it. Rows are deleted as each concern gets a real file path.
+`App.vue` owns every ref and every composable and passes them down; the components
+are presentational and talk back through emits only.
 
-| Concern | Lines | Key symbols |
-| --- | --- | --- |
-| Imports | 1–44 | 33 lucide icons, engine + constants imports |
-| Lazy modal imports | 47–49 | `defineAsyncComponent` |
-| All reactive state | 52–129 | ~50 `ref`/`reactive`/computed declarations |
-| Zoom & pan | 131–192 | `zoomIn/Out`, `resetZoom`, `onWheelZoom`, `onPanStart/Move/End` |
-| Browser zoom + font scaling | 194–239 | `updateBrowserZoom`, `applyFontSize`, `cycleFontSize` |
-| Tuning + modal state | 241–266 | `tuning`, `sliderPosition`, `previewBg`, prompt refs |
-| Model cache management | 268–347 | `checkModelCacheStatus`, `clearAllCache`, `formattedCacheUsage` |
-| Preload / presets / formatting | 349–397 | `handlePreload`, `applyPreset`, `formatBytes` |
-| **AI pipeline** | **401–519** | **`processImage`** |
-| Model-change prompt flow | 521–566 | `handleModelSelectChange`, `confirmModelRerun` |
-| Fast GPU preview | 568–610 | `renderFastPreview`, `schedulePreview` |
-| **Full-quality compositing** | **612–717** | **`recompositeCanvas`** (threshold/trim/deFringe) |
-| Cutout outline overlay | 719–788 | `toggleOutline`, `updateOutlineOverlay` |
-| Subject visibility / erase | 790–831 | `toggleSubjectVisibility`, `eraseSubject` |
-| Undo / redo / brush reset | 833–868 | `saveUndoState`, `handleUndo`, `handleRedo` |
-| Pointer → pixel mapping | 870–912 | `getCanvasCoords` |
-| Brush engine | 916–978 | `onPointerDown/Move/Up` |
-| Selection overlay + ants | 980–1083 | `renderSelectionOverlay`, `startAntsAnimation` |
-| Magnetic lasso edge snap | 1085–1140 | `findNearestObjectEdge` |
-| Selection tools | 1142–1337 | `onSelectPointerDown/Move/Up`, `applySelectionAction` |
-| File input / paste / copy | 1339–1410 | `confirmAndProcessImage`, `onDrop`, `onPaste` |
-| Reset | 1412–1431 | `reset` |
-| Keyboard shortcuts | 1433–1466 | `onKeyDown` (Ctrl+Z/Y, Delete/Enter/Esc) |
-| Lifecycle | 1468–1499 | `watch(activeTool)`, `onMounted`, `onUnmounted` |
+| Concern | File |
+| --- | --- |
+| Navbar, brand, version badge, mode + font-size controls | `components/Navbar.vue` |
+| Model picker, cached indicator, preload, cache pill | `components/ModelStatusBar.vue` |
+| Upload hero / dropzone | `components/UploadHero.vue` |
+| Processing overlay, download progress, live tiles | `components/ProcessingOverlay.vue` |
+| File/dimension/subject tags, tool + backdrop switchers | `components/StageHeader.vue` |
+| Canvas stack, tool layers, brush/selection/pan surfaces | `components/CanvasViewport.vue` |
+| Zoom controls | `components/ZoomToolbar.vue` |
+| Per-tool footer controls + export actions | `components/StageFooter.vue` |
+| Presets, tuning sliders, engine selects, telemetry card | `components/TuningSidebar.vue` |
+| Subject drawer | `components/SubjectsDrawer.vue` |
+| "Switch model?" / "Replace image?" prompts | `components/ModelChangePrompt.vue`, `components/ReplaceImagePrompt.vue` |
+| Model loading, device selection + fallback | `aiEngine.js` |
+| Subject detection, flood fill, contour extraction | `detectionEngine.js` |
+| Fast GPU preview vs full-quality export | `composables/useCompositor.ts` |
+| Mask history (undo/redo/reset) | `composables/useUndoRedo.ts` |
+| Canvas handles (live module bindings) | `core/canvasStore.ts` |
+| `localStorage` key names | `core/storageKeys.ts` |
+| Pointer event → image pixel mapping | `getCanvasCoords` in `App.vue` (destined for `core/geometry.ts`) |
+| Styles | `styles/global.css` (unscoped), `styles/app.css` (App.vue's shell), and a scoped `<style>` inside each component |
 
-Template: navbar 1504–1619 · upload hero 1623–1671 · processing overlay
-1672–1713 · studio workspace 1714–2274 · `<Teleport>` prompt modals 2276–2389 ·
-modal mounts 2391–2413.
-Styles: global `<style>` 2417–2829 · `<style scoped>` 2831–4403.
+Styles travel with markup: when a block moves into a component, its CSS moves too,
+because scoped styles do not cross component boundaries. Vue also rewrites
+`@keyframes` names per scope, so a component can never use a parent's keyframes —
+`ProcessingOverlay`, `ModelStatusBar` and `InfoModal` each declare their own
+`spin`.
 
 ## Non-obvious constraints — read before editing
 
@@ -168,7 +167,18 @@ Styles: global `<style>` 2417–2829 · `<style scoped>` 2831–4403.
    `updateOutlineOverlay` / `stopOutlineAnimation` never run. Found while
    extracting `useOutlineOverlay.ts`; the code was moved verbatim rather than
    deleted, because dropping a feature is a product decision.
-9. `.demo-showcase-trigger` and `.model-notice-pill` have no matching markup
-   anywhere in the app. They were already dead before the components phase and
-   moved with the hero's CSS into `UploadHero.vue` rather than deleted, for the
-   same reason as issue 8.
+9. Dead CSS rules are scattered through the components: `.demo-showcase-trigger`
+   and `.model-notice-pill` (in `UploadHero.vue`) and `.cached-text` /
+   `.uncached-text` (in `ModelStatusBar.vue`) have no matching markup anywhere in
+   the app. They were already dead before the components phase and moved with
+   their block rather than deleted, for the same reason as issue 8.
+10. The three power-user sliders call `recompositeCanvas` with the raw `input`
+    event, so it arrives as the `immediateBlob` argument, which is truthy — every
+    slider tick runs the full-resolution pixel loop synchronously instead of
+    taking the ~120 ms debounce. The de-fringe toggle beside them is called with
+    no arguments and does debounce. Pre-existing; preserved deliberately during the
+    extraction (see the note in `TuningSidebar.vue`), not fixed.
+11. `ShowcaseModal.vue` (1000 lines) and `InfoModal.vue` (789) are over the
+    450-line budget, and it is almost entirely scoped CSS (646 and 575 lines).
+    `npm run context:check` therefore exits 1 — the budget is unmet until those two
+    modals are split. `context:report` prints the per-block breakdown that says so.
