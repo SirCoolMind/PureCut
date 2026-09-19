@@ -257,23 +257,6 @@ const showInfoModal = ref(false)
 // Preset handling (`applyPreset`) lives in src/composables/useCompositor.ts, and
 // formatBytes in src/core/format.ts (imported above).
 
-// The AI pipeline (processImage) now lives in src/composables/useProcessing.ts.
-
-// The model-change confirmation prompt now lives in
-// src/composables/useProcessing.ts.
-
-// The compositing engine (fast GPU preview, debounced full-quality export) now
-// lives in src/composables/useCompositor.ts.
-
-// The contour-outline renderer now lives in src/composables/useOutlineOverlay.ts
-
-// Subject visibility / erase now live in src/composables/useSubjects.ts.
-// Known bug moved verbatim with it: erasing clips to the bounding box, so
-// overlapping neighbours lose pixels too.
-
-// Undo / redo / reset-to-raw-AI-mask now live in src/composables/useUndoRedo.ts.
-// saveUndoState() is called from the brush, selection and subject tools below.
-
 // Pointer → image-pixel mapping. The maths lives in src/core/geometry.ts so it can
 // be unit-tested without a DOM; this adapter only reads the live viewport box and
 // the current view state.
@@ -289,18 +272,6 @@ function getCanvasCoords(e) {
     panY: panOffset.y
   })
 }
-
-// The brush engine now lives in src/composables/useBrush.ts. Its handlers are
-// wired to the brush interaction surface in the template.
-
-// The marching-ants overlay renderer now lives in
-// src/composables/useSelectionOverlay.ts.
-
-// The selection tools (magnetic lasso, lasso, rect, polygon, magic wand) now
-// live in src/composables/useSelectionTools.ts.
-
-// Image intake (picker / drop / paste / copy) and the replace-image prompt now
-// live in src/composables/useImageInput.ts.
 
 function reset() {
   originalUrl.value = null
