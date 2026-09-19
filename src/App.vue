@@ -20,8 +20,6 @@ import {
   SplitSquareVertical,
   Maximize2,
   Trash2,
-  ZoomIn,
-  ZoomOut,
   Move,
   Monitor,
   BoxSelect,
@@ -58,6 +56,7 @@ import UploadHero from './components/UploadHero.vue'
 import ModelChangePrompt from './components/ModelChangePrompt.vue'
 import ReplaceImagePrompt from './components/ReplaceImagePrompt.vue'
 import SubjectsDrawer from './components/SubjectsDrawer.vue'
+import ZoomToolbar from './components/ZoomToolbar.vue'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -668,29 +667,13 @@ onUnmounted(() => {
             @wheel="onWheelZoom"
           >
             <!-- Zoom & Pan Floating Controls -->
-            <div class="zoom-floating-toolbar">
-              <button
-                v-if="zoomLevel !== 1 || panOffset.x !== 0 || panOffset.y !== 0"
-                class="zoom-btn reset-btn"
-                @click="resetZoom"
-                title="Reset Zoom & Pan"
-              >
-                <RotateCcw :size="12" /> Reset
-              </button>
-              <button class="zoom-btn" @click="zoomIn" title="Zoom In (+25%)">
-                <ZoomIn :size="13" />
-              </button>
-              <button
-                class="zoom-level-badge"
-                @click="resetZoom"
-                :title="zoomLevel !== 1 || panOffset.x !== 0 || panOffset.y !== 0 ? 'Click to Reset Zoom & Position' : '100% Zoom'"
-              >
-                {{ Math.round(zoomLevel * 100) }}%
-              </button>
-              <button class="zoom-btn" @click="zoomOut" title="Zoom Out (-25%)">
-                <ZoomOut :size="13" />
-              </button>
-            </div>
+            <ZoomToolbar
+              :zoom-level="zoomLevel"
+              :pan-offset="panOffset"
+              @zoom-in="zoomIn"
+              @zoom-out="zoomOut"
+              @reset="resetZoom"
+            />
 
             <!-- Scalable & Pannable Stage Surface Container -->
             <div
