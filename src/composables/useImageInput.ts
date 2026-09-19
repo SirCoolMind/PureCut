@@ -13,7 +13,11 @@
  *                   file into a prompt instead of an immediate re-process
  *  - `resultBlob`   the PNG the compositor produced, copied by copyToClipboard
  *  - `copied`       from useWorkspaceUi; drives the "Copied!" button state
- *  - `processImage` the AI pipeline, still owned by App.vue
+ *  - `processImage` the AI pipeline, owned by useProcessing
+ *
+ * `currentFileBlob` deliberately does NOT live here: useProcessing must be wired
+ * before this module (it supplies processImage), and it needs the current file, so
+ * App.vue declares that ref and passes it to both.
  *
  * `fileInput` is bound in the template (`ref="fileInput"`), so it must stay
  * exposed under that exact name.
@@ -38,8 +42,6 @@ interface ImageInputDeps {
 export function useImageInput({ originalUrl, resultBlob, copied, processImage }: ImageInputDeps) {
   /** Template ref for the hidden file input. */
   const fileInput = ref<HTMLInputElement | null>(null)
-  /** The file currently loaded; re-run when the model changes. */
-  const currentFileBlob = ref<File | null>(null)
 
   // Staged replacement, live only while the replace-image prompt is open
   const showReplaceImagePrompt = ref(false)
@@ -121,7 +123,6 @@ export function useImageInput({ originalUrl, resultBlob, copied, processImage }:
 
   return {
     fileInput,
-    currentFileBlob,
     showReplaceImagePrompt,
     pendingNewImageFile,
     pendingNewImageThumbnail,

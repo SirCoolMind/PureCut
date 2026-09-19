@@ -1,6 +1,5 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch, defineAsyncComponent } from 'vue'
-import { runTransformersModel, preloadTransformersModel } from './aiEngine.js'
 import {
   UploadCloud,
   Sparkles,
@@ -41,23 +40,9 @@ import {
   Type
 } from 'lucide-vue-next'
 import { appVersion, modelOptions } from './constants.js'
-import { detectSubjects } from './detectionEngine.js'
-import { STORAGE_KEYS, cachedModelKey } from './core/storageKeys.js'
-import { formatBytes } from './core/format.js'
 // Canvas handles are live module bindings, not refs - see src/core/canvasStore.ts.
-// They are read directly (keeping the old call sites intact) and replaced through
-// the setters, because ES modules forbid assigning to an imported binding.
-import {
-  maskCanvas,
-  maskCtx,
-  originalCanvas,
-  originalCtx,
-  setMaskCanvas,
-  setMaskCtx,
-  setOriginalCanvas,
-  setOriginalCtx,
-  clearCanvases
-} from './core/canvasStore.js'
+// Read directly; replaced only through that module's setters.
+import { maskCanvas, originalCanvas, clearCanvases } from './core/canvasStore.js'
 import { useDisplayScale } from './composables/useDisplayScale.js'
 import { useWorkspaceUi } from './composables/useWorkspaceUi.js'
 import { useZoomPan } from './composables/useZoomPan.js'
@@ -71,6 +56,7 @@ import { useSelectionOverlay } from './composables/useSelectionOverlay.js'
 import { useSelectionTools } from './composables/useSelectionTools.js'
 import { useCompositor } from './composables/useCompositor.js'
 import { useModelCache } from './composables/useModelCache.js'
+import { useProcessing } from './composables/useProcessing.js'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -87,15 +73,13 @@ const resultBlob = ref(null)
 // src/core/canvasStore.ts as non-reactive module bindings, so extracted tools can
 // reach the live canvas without threading it through every function signature.
 
-const fileName = ref('')
-const fileSize = ref('')
+// fileName / fileSize are owned by useProcessing (wired below).
 const imageDimensions = reactive({ width: 0, height: 0 })
 
-// Processing & Telemetry
-const isProcessing = ref(false)
-const isPreloading = ref(false)
+// Processing & telemetry. isProcessing / isPreloading / downloadProgress are owned
+// by useProcessing (wired below); statusMessage stays declared here because
+// useModelCache, useProcessing and the template all read or write it.
 const statusMessage = ref('')
-const downloadProgress = reactive({ loadedMB: 0, totalMB: 0, percent: 0, isDownloading: false })
 // Filled in by processImage() once inference completes. See useTelemetry.
 const { telemetry } = useTelemetry()
 
@@ -166,10 +150,55 @@ const { tuning, applyPreset, renderFastPreview, schedulePreview, recompositeCanv
 const { undoHistory, redoHistory, saveUndoState, handleUndo, handleRedo, resetBrush } =
   useUndoRedo({ imageDimensions, recompositeCanvas })
 
+// Detected subjects + the drawer that hides/erases them. See useSubjects.
+// processImage() seeds detectedSubjects and may auto-open the drawer.
+const { detectedSubjects, showSubjectsDrawer, toggleSubjectVisibility, eraseSubject, refreshDetectionData } =
+  useSubjects({ saveUndoState, recompositeCanvas })
+
+// The file currently loaded. Declared here rather than inside useImageInput because
+// the intake composable needs processImage (so useProcessing must be wired first)
+// and useProcessing needs the file.
+const currentFileBlob = ref(null)
+
+// The AI pipeline plus the preload and model-change-prompt flows. See useProcessing.
+const {
+  isProcessing,
+  isPreloading,
+  downloadProgress,
+  fileName,
+  fileSize,
+  showModelChangePrompt,
+  pendingModelId,
+  dontAskModelChangeAgain,
+  handlePreload,
+  processImage,
+  handleModelSelectChange,
+  confirmModelRerun,
+  cancelModelRerun,
+  reRunModel
+} = useProcessing({
+  currentFileBlob,
+  originalUrl,
+  resultUrl,
+  resultBlob,
+  undoHistory,
+  statusMessage,
+  imageDimensions,
+  selectedModel,
+  selectedDevice,
+  cachedModels,
+  currentModelCached,
+  currentModelMeta,
+  telemetry,
+  detectedSubjects,
+  showSubjectsDrawer,
+  recompositeCanvas,
+  saveUndoState
+})
+
 // Image intake: picker, drag & drop, paste, copy, and the replace-image prompt.
 const {
   fileInput,
-  currentFileBlob,
   showReplaceImagePrompt,
   pendingNewImageFile,
   pendingNewImageThumbnail,
@@ -181,11 +210,6 @@ const {
   onPaste,
   copyToClipboard
 } = useImageInput({ originalUrl, resultBlob, copied, processImage })
-
-// Detected subjects + the drawer that hides/erases them. See useSubjects.
-// processImage() seeds detectedSubjects and may auto-open the drawer.
-const { detectedSubjects, showSubjectsDrawer, toggleSubjectVisibility, eraseSubject, refreshDetectionData } =
-  useSubjects({ saveUndoState, recompositeCanvas })
 
 // The animated contour outline is currently inert - nothing calls toggleOutline(),
 // so showOutline is only ever read (by the template). See AGENTS.md known issues.
@@ -234,213 +258,19 @@ const { onSelectPointerDown, onSelectPointerMove, onSelectPointerUp, clearSelect
 
 // Modal State
 const showInfoModal = ref(false)
-const showModelChangePrompt = ref(false)
-const pendingModelId = ref(null)
-const dontAskModelChangeAgain = ref(false)
 
 // Model cache status, storage-size reporting and clearing now live in
 // src/composables/useModelCache.ts.
 
-// Preload handler
-async function handlePreload() {
-  if (isPreloading.value || isProcessing.value) return
-  isPreloading.value = true
-  downloadProgress.isDownloading = true
-  downloadProgress.percent = 0
-  statusMessage.value = `Downloading ${currentModelMeta.value.name.split(' ')[0]} weights (${currentModelMeta.value.size})...`
-
-  try {
-    await preloadTransformersModel(selectedModel.value, currentModelMeta.value.dtype, currentModelMeta.value.disableOptimization, selectedDevice.value, (progress) => {
-      if (progress && (progress.progress !== undefined || progress.pct !== undefined)) {
-        const raw = progress.pct !== undefined ? progress.pct : progress.progress
-        const pct = Math.min(100, Math.max(0, Math.round(raw > 1 ? raw : raw * 100)))
-        downloadProgress.percent = pct
-        statusMessage.value = `Downloading ${currentModelMeta.value.name.split(' ')[0]} weights: ${pct}%...`
-      }
-    })
-    cachedModels[selectedModel.value] = true
-    localStorage.setItem(cachedModelKey(selectedModel.value), 'true')
-    statusMessage.value = 'AI Model cached & ready!'
-    setTimeout(() => { downloadProgress.isDownloading = false }, 1500)
-  } catch (err) {
-    console.error('Preload failed:', err)
-    alert('Failed to pre-download model. Please check your internet connection.')
-  } finally {
-    isPreloading.value = false
-  }
-}
+// The preload flow now lives in src/composables/useProcessing.ts.
 
 // Preset handling (`applyPreset`) lives in src/composables/useCompositor.ts, and
 // formatBytes in src/core/format.ts (imported above).
 
-// Main AI Processing Function
-async function processImage(file) {
-  if (!file || !file.type.startsWith('image/')) return
-  currentFileBlob.value = file
+// The AI pipeline (processImage) now lives in src/composables/useProcessing.ts.
 
-  fileName.value = file.name || 'photo.png'
-  fileSize.value = formatBytes(file.size)
-  originalUrl.value = URL.createObjectURL(file)
-  resultUrl.value = null
-  resultBlob.value = null
-  undoHistory.value = []
-  isProcessing.value = true
-  downloadProgress.percent = 0
-  downloadProgress.isDownloading = !currentModelCached.value
-  statusMessage.value = currentModelCached.value
-    ? 'Analyzing image with AI...'
-    : `Downloading ${currentModelMeta.value.name.split(' ')[0]} model (${currentModelMeta.value.size})...`
-
-  const startHeap = (typeof window !== 'undefined' && window.performance && window.performance.memory)
-    ? window.performance.memory.usedJSHeapSize
-    : 0
-  const startTime = performance.now()
-
-  // Load original image into memory
-  const img = new Image()
-  img.crossOrigin = 'anonymous'
-  await new Promise((resolve) => {
-    img.onload = () => {
-      imageDimensions.width = img.naturalWidth
-      imageDimensions.height = img.naturalHeight
-      resolve(true)
-    }
-
-    img.src = originalUrl.value
-  })
-
-  // Initialize offscreen original canvas
-  const originalCanvasEl = document.createElement('canvas')
-  originalCanvasEl.width = imageDimensions.width
-  originalCanvasEl.height = imageDimensions.height
-  setOriginalCanvas(originalCanvasEl)
-  setOriginalCtx(originalCanvasEl.getContext('2d', { willReadFrequently: true }))
-  originalCtx.drawImage(img, 0, 0)
-
-  try {
-    let rawMaskBlob = null
-
-    // Run transformers.js model
-    const result = await runTransformersModel(file, selectedModel.value, currentModelMeta.value.dtype, currentModelMeta.value.disableOptimization, selectedDevice.value, (p) => {
-      if (p.message) statusMessage.value = p.message
-      if (p && (p.progress !== undefined || p.pct !== undefined)) {
-        const raw = p.pct !== undefined ? p.pct : p.progress
-        downloadProgress.percent = Math.min(100, Math.max(0, Math.round(raw > 1 ? raw : raw * 100)))
-      }
-    })
-    rawMaskBlob = result.maskBlob
-
-    cachedModels[selectedModel.value] = true
-    localStorage.setItem(cachedModelKey(selectedModel.value), 'true')
-
-    // Initialize mask canvas
-    const maskImg = new Image()
-    maskImg.crossOrigin = 'anonymous'
-    const maskUrl = URL.createObjectURL(rawMaskBlob)
-    await new Promise((resolve) => {
-      maskImg.onload = () => resolve(true)
-      maskImg.src = maskUrl
-    })
-
-    const maskCanvasEl = document.createElement('canvas')
-    maskCanvasEl.width = imageDimensions.width
-    maskCanvasEl.height = imageDimensions.height
-    setMaskCanvas(maskCanvasEl)
-    setMaskCtx(maskCanvasEl.getContext('2d', { willReadFrequently: true }))
-    maskCtx.drawImage(maskImg, 0, 0)
-    saveUndoState()
-
-    // Telemetry stats
-    const endTime = performance.now()
-    const elapsed = endTime - startTime
-    telemetry.durationMs = Math.round(elapsed)
-    telemetry.durationSec = (elapsed / 1000).toFixed(2)
-
-    const endHeap = (typeof window !== 'undefined' && window.performance && window.performance.memory)
-      ? window.performance.memory.usedJSHeapSize
-      : 0
-    if (endHeap > 0 && startHeap > 0) {
-      telemetry.ramAllocatedMB = Math.max(25, Math.round((endHeap - startHeap) / (1024 * 1024)))
-      telemetry.ramTotalMB = Math.round(endHeap / (1024 * 1024))
-    } else {
-      const estimated = Math.round(35 + (imageDimensions.width * imageDimensions.height * 4 * 2) / (1024 * 1024))
-      telemetry.ramAllocatedMB = estimated
-      telemetry.ramTotalMB = estimated + 110
-    }
-
-    const megapixels = (imageDimensions.width * imageDimensions.height) / 1000000
-    telemetry.throughputMps = (megapixels / (elapsed / 1000)).toFixed(2)
-    const actualDevice = result.deviceUsed || (selectedDevice.value === 'gpu' ? 'webgpu' : 'wasm')
-    telemetry.deviceUsed = actualDevice === 'webgpu' ? 'WebGPU (Hardware GPU)' : 'WASM SIMD Multi-threaded'
-    if (actualDevice === 'wasm' && selectedDevice.value === 'gpu') {
-      selectedDevice.value = 'cpu'
-    }
-
-    recompositeCanvas()
-    
-    // Analyze and extract separate objects/subjects asynchronously
-    setTimeout(() => {
-      detectedSubjects.value = detectSubjects(maskCanvas, originalCanvas)
-      if (detectedSubjects.value.length > 1) {
-        showSubjectsDrawer.value = true // automatically open drawer if multiple subjects found
-      }
-    }, 50)
-    
-  } catch (error) {
-    console.error('Processing error:', error)
-    alert(error.message || 'Failed to process image. Try selecting another model or device.')
-  } finally {
-    isProcessing.value = false
-    downloadProgress.isDownloading = false
-  }
-}
-
-// Model change confirmation logic
-function handleModelSelectChange(e) {
-  const newModelId = e.target.value
-  if (!originalUrl.value || !currentFileBlob.value) {
-    selectedModel.value = newModelId
-    return
-  }
-  const promptPref = localStorage.getItem(STORAGE_KEYS.promptModelChange)
-  const shouldPrompt = promptPref === null ? true : promptPref === 'true'
-  if (!shouldPrompt) {
-    selectedModel.value = newModelId
-    reRunModel()
-    return
-  }
-  // Prompt the user
-  pendingModelId.value = newModelId
-  dontAskModelChangeAgain.value = false
-  // Revert select display until confirmed
-  e.target.value = selectedModel.value
-  showModelChangePrompt.value = true
-}
-function confirmModelRerun() {
-  if (dontAskModelChangeAgain.value) {
-    localStorage.setItem(STORAGE_KEYS.promptModelChange, 'false')
-  }
-  if (pendingModelId.value) {
-    selectedModel.value = pendingModelId.value
-  }
-  showModelChangePrompt.value = false
-  pendingModelId.value = null
-  reRunModel()
-}
-function cancelModelRerun() {
-  if (dontAskModelChangeAgain.value) {
-    localStorage.setItem(STORAGE_KEYS.promptModelChange, 'false')
-  }
-  showModelChangePrompt.value = false
-  pendingModelId.value = null
-}
-
-// Re-run AI model
-function reRunModel() {
-  if (currentFileBlob.value) {
-    processImage(currentFileBlob.value)
-  }
-}
+// The model-change confirmation prompt now lives in
+// src/composables/useProcessing.ts.
 
 // The compositing engine (fast GPU preview, debounced full-quality export) now
 // lives in src/composables/useCompositor.ts.
