@@ -21,6 +21,7 @@ server, no API, and no backend — images never leave the device.
 | Enforce the file-size budget | `npm run context:check` |
 | Unit tests (vitest, pure modules) | `npm test` |
 | Type-check the source | `npm run typecheck` |
+| Check a build for lost styling | `node scripts/css-parity.mjs dist` / `--compare a.txt b.txt` |
 
 TypeScript is pinned to **5.x on purpose.** `vue-tsc` resolves
 `typescript/lib/tsc`, which TypeScript 7 removed from its `exports` map, so
@@ -28,25 +29,27 @@ upgrading TS breaks `npm run typecheck` with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
 Do not bump TypeScript past 5 until vue-tsc supports TS 7.
 
 `npm run test:regression` is the structural safety net: a Playwright suite
-(`tests/e2e/regression.mjs`, 61 checks) that needs the dev server on :5173 and
-clicks through the whole app, including inference. Run it before and after any
-structural change. It catches a lost element or a dead handler, but **not** lost
-styling, so pair it with a visual check whenever markup moves between files.
-`test.cjs` still cannot run (no `puppeteer` dependency) and `playwright-test.mjs`
-/ `test-showcase.mjs` still point at a hardcoded path outside this repo.
+(`tests/e2e/regression.mjs`, 66 lines of orchestration over `tests/e2e/checks/*`)
+that needs the dev server on :5173 and clicks through the whole app, including
+inference. Run it before and after any structural change. It catches a lost
+element or a dead handler, but **not** lost styling, so pair it with a visual
+check whenever markup moves between files. For styling there is
+`scripts/css-parity.mjs` (see below), which is the only guard against a rule
+that silently stopped matching.
 
 ## Architecture
 
 | Module | Role |
 | --- | --- |
-| `src/App.vue` | The application shell: the composable wiring block, the four function refs, `getCanvasCoords`, `reset`, `onKeyDown` and the lifecycle hooks, plus the template that composes the components below. ~610 lines (script ~420, template ~185). |
+| `src/App.vue` | The application shell: the composable wiring block, the four function refs, `getCanvasCoords`, `reset`, `onKeyDown` and the lifecycle hooks, plus the template that composes the components below. **552 lines** (script 360, template 184) — down from 4404. |
 | `src/aiEngine.js` | Transformers.js wrapper. Model loading, device selection (WebGPU vs WASM), and the WebGPU→WASM fallback. |
 | `src/detectionEngine.js` | Pure pixel analysis: connected-component subject detection, magic-wand flood fill, mask contour extraction. No Vue, no DOM. |
 | `src/constants.js` | `appVersion`, `modelOptions`, `changelog`, `roadmap`. |
-| `src/components/*.vue` | The view layer, one concern per file: `Navbar`, `ModelStatusBar`, `UploadHero`, `ProcessingOverlay`, `StageHeader`, `CanvasViewport`, `StageFooter`, `TuningSidebar`, `SubjectsDrawer`, `ZoomToolbar`, `ModelChangePrompt`, `ReplaceImagePrompt`, plus the three lazy-loaded modals (Info / Settings / Showcase). Dumb props + emits; all state stays in `App.vue`. |
+| `src/components/*.vue` | The view layer, one concern per file: `Navbar`, `ModelStatusBar`, `UploadHero`, `ProcessingOverlay`, `StageHeader`, `CanvasViewport`, `StageFooter`, `TuningSidebar`, `SubjectsDrawer`, `ZoomToolbar`, `ModelChangePrompt`, `ReplaceImagePrompt`, plus the three lazy-loaded modals (Info / Settings / Showcase) and their sub-components: `ShowcaseSliderStage`, `ShowcaseDiagnosis`, `ShowcaseGallery`, `InfoChangelogTab`, `InfoRoadmapTab`, `InfoAboutTab`, `InfoStorageTab`. Dumb props + emits; all state stays in `App.vue`. |
 | `src/composables/*.ts` | `setup()`-scope state and behaviour, one concern per composable. Dependencies arrive as refs/callbacks rather than imports, so each module's signature is its whole contract: `useDisplayScale`, `useWorkspaceUi`, `useZoomPan`, `useTelemetry`, `useUndoRedo`, `useImageInput`, `useOutlineOverlay`, `useSubjects`, `useBrush`, `useSelectionOverlay`, `useSelectionTools`, `useCompositor`, `useModelCache`, `useProcessing`. |
-| `src/core/*.ts` | Framework-free modules: no Vue, no DOM side effects. Must be unit-testable in isolation. Currently `storageKeys.ts`, `canvasStore.ts`, `format.ts`. |
+| `src/core/*.ts` | Framework-free modules: no Vue, no DOM side effects. Must be unit-testable in isolation. Currently `storageKeys.ts`, `canvasStore.ts`, `format.ts`, `geometry.ts`, `maskOps.ts`. |
 | `scripts/context-report.mjs` | The size budget tool: per-file lines/tokens, plus a per-block breakdown for oversized `.vue` files. |
+| `scripts/css-parity.mjs` | Normalises the CSS of a build into a sorted set of `selector | declaration` lines and diffs two snapshots. The only guard against a rule that silently stopped matching. |
 
 > **Note:** the refactor is done moving code out of `App.vue` — logic lives in
 > `src/composables/`, helpers in `src/core/`, markup in `src/components/`.
@@ -86,14 +89,23 @@ are presentational and talk back through emits only.
 | Mask history (undo/redo/reset) | `composables/useUndoRedo.ts` |
 | Canvas handles (live module bindings) | `core/canvasStore.ts` |
 | `localStorage` key names | `core/storageKeys.ts` |
-| Pointer event → image pixel mapping | `getCanvasCoords` in `App.vue` (destined for `core/geometry.ts`) |
+| Pointer event → image pixel mapping | `toImageCoords` in `core/geometry.ts` (injected into the tool composables as `getCanvasCoords`) |
+| Trim / threshold / de-fringe, wand rect mapping, lasso snap | `core/maskOps.ts` |
 | Styles | `styles/global.css` (unscoped), `styles/app.css` (App.vue's shell), and a scoped `<style>` inside each component |
 
 Styles travel with markup: when a block moves into a component, its CSS moves too,
 because scoped styles do not cross component boundaries. Vue also rewrites
 `@keyframes` names per scope, so a component can never use a parent's keyframes —
-`ProcessingOverlay`, `ModelStatusBar` and `InfoModal` each declare their own
-`spin`.
+`ProcessingOverlay`, `ModelStatusBar`, `InfoModal` and each of the four
+`Info*Tab` components declare their own.
+
+The same rule bites in the other direction: a scoped rule can only style a child
+through the child's ROOT element. `.stage-grid` in `ShowcaseModal.vue` lays out
+both `ShowcaseSliderStage` and `ShowcaseDiagnosis`, so it has to live in the host
+— left inside the stage component it silently stopped matching and the two-column
+layout collapsed, while the regression harness stayed green (it asserts elements,
+not layout) and css-parity stayed identical (a scoped rule that matches nothing is
+still a rule).
 
 ## Non-obvious constraints — read before editing
 
@@ -154,44 +166,42 @@ because scoped styles do not cross component boundaries. Vue also rewrites
    per-component mask pixels, so erasing one subject also wipes overlapping
    pixels of its neighbours. The code comment acknowledges this.
 2. `ShowcaseModal.vue` emits `open-in-studio` but nothing listens for it.
-3. `test.cjs` cannot run — it requires `puppeteer`, which is not a dependency —
-   and it targets port 5174 while the dev server uses 5173.
-4. `playwright-test.mjs` and `test-showcase.mjs` were written against a
-   hardcoded absolute artifact path outside this repo.
-5. `@imgly/background-removal` is declared as a dependency but never imported
-   (it appears only as a display string in `InfoModal.vue`).
-6. `SettingsModal.vue` writes `localStorage` directly, bypassing `App.vue`.
-7. `App.vue` contains no `@media` queries — there is no responsive layout.
-8. The contour-outline overlay is unreachable. `showOutline` is only ever written
+3. `@imgly/background-removal` is declared as a dependency but never imported   (it appears only as a display string in `InfoModal.vue`).
+4. `SettingsModal.vue` writes `localStorage` directly, bypassing `App.vue`.
+5. `App.vue` contains no `@media` queries — there is no responsive layout.
+6. The contour-outline overlay is unreachable. `showOutline` is only ever written
    by `toggleOutline()`, and nothing calls `toggleOutline` — not the template, not
    `onKeyDown`. So the `#outlineCanvas` layer never becomes visible and
    `updateOutlineOverlay` / `stopOutlineAnimation` never run. Found while
    extracting `useOutlineOverlay.ts`; the code was moved verbatim rather than
    deleted, because dropping a feature is a product decision.
-9. Dead CSS rules are scattered through the components: `.demo-showcase-trigger`
+7. Dead CSS rules are scattered through the components: `.demo-showcase-trigger`
    and `.model-notice-pill` (in `UploadHero.vue`) and `.cached-text` /
    `.uncached-text` (in `ModelStatusBar.vue`) have no matching markup anywhere in
    the app. They were already dead before the components phase and moved with
-   their block rather than deleted, for the same reason as issue 8.
-10. The three power-user sliders call `recompositeCanvas` with the raw `input`
-    event, so it arrives as the `immediateBlob` argument, which is truthy — every
-    slider tick runs the full-resolution pixel loop synchronously instead of
-    taking the ~120 ms debounce. The de-fringe toggle beside them is called with
-    no arguments and does debounce. Pre-existing; preserved deliberately during the
-    extraction (see the note in `TuningSidebar.vue`), not fixed.
-11. `ShowcaseModal.vue` (1000 lines) and `InfoModal.vue` (789) are over the
-    450-line budget, and it is almost entirely scoped CSS (646 and 575 lines).
-    `tests/e2e/regression.mjs` (536) is over it too, and `src/App.vue` (552) is
-    still above its 400-line target. `npm run context:check` therefore exits 1 —
-    the budget is unmet until those are split. `context:report` prints the
-    per-block breakdown that says which block to split in each case.
+   their block rather than deleted, for the same reason as issue 6.
+8. The three power-user sliders call `recompositeCanvas` with the raw `input`
+   event, so it arrives as the `immediateBlob` argument, which is truthy — every
+   slider tick runs the full-resolution pixel loop synchronously instead of
+   taking the ~120 ms debounce. The de-fringe toggle beside them is called with
+   no arguments and does debounce. Pre-existing; preserved deliberately during the
+   extraction (see the note in `TuningSidebar.vue`), not fixed.
+9. `src/App.vue` (552 lines) is the last file over the 450-line budget. Its
+   ≤400-line target is explicitly forgiven by the user, so `context:check`
+   allows it; everything else the budget covers now fits. Splitting the two
+   former offenders took three commits: `ShowcaseModal.vue` 1000 → 396 plus
+   `ShowcaseSliderStage` / `ShowcaseDiagnosis` / `ShowcaseGallery`, and
+   `InfoModal.vue` 789 → 279 plus four `Info*Tab` components.
 
 ## Test layout
 
 | Path | Runner | Scope |
 | --- | --- | --- |
 | `tests/unit/*.test.ts` | `npm test` (vitest) | `src/core/*.ts`: pure functions, no DOM |
-| `tests/e2e/regression.mjs` | `npm run test:regression` | the running app, needs :5173 |
+| `tests/e2e/regression.mjs` | `npm run test:regression` | orchestrator: builds the harness, runs the areas |
+| `tests/e2e/lib/constants.mjs` | — | env defaults, benign-noise allowlist, fixtures |
+| `tests/e2e/lib/harness.mjs` | — | `Harness`, `check`/`skip`, screenshots, reporting |
+| `tests/e2e/checks/*.mjs` | — | one area each: landing, modals, viewport, studio |
 | `tests/fixtures/` | — | input image for the e2e run |
 
 The budget covers `tests/` as well as `src/` and `scripts/`, because those files
