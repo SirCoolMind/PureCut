@@ -1,4 +1,5 @@
 import { pipeline, env, AutoModelForSemanticSegmentation, RawImage } from '@huggingface/transformers';
+import { STORAGE_KEYS } from './core/storageKeys.js';
 
 // Ensure SegformerForSemanticSegmentation is properly registered for image-segmentation tasks (used by RMBG-1.4 and related checkpoints)
 if (AutoModelForSemanticSegmentation?.MODEL_CLASS_MAPPINGS?.[0]) {
@@ -16,7 +17,7 @@ if (typeof window !== 'undefined') {
   // Custom Fetch Interceptor to inject Hugging Face Access Token
   const originalFetch = env.fetch || window.fetch;
   env.fetch = async (url, init) => {
-    const token = localStorage.getItem('purecut_hf_token');
+    const token = localStorage.getItem(STORAGE_KEYS.hfToken);
     if (token && url.includes('huggingface.co')) {
       init = init || {};
       init.headers = init.headers || {};

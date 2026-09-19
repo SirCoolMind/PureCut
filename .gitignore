@@ -20,10 +20,17 @@ pnpm-debug.log*
 # OS & Editor files
 .DS_Store
 Thumbs.db
-.vscode/
+# Share .vscode/settings.json so AI-context search exclusions survive a fresh
+# clone on any machine. Everything else in .vscode/ stays local.
+.vscode/*
+!.vscode/settings.json
 .idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+# Refactor scaffolding & test output
+.refactor-baseline/
+tests/artifacts/

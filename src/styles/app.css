@@ -1,0 +1,79 @@
+/* ==========================================================================
+   app.css — scoped styles for App.vue.
+   Moved verbatim out of App.vue's <style scoped> block during the AI-context
+   refactor; App.vue loads it via <style scoped src="./styles/app.css">, so the
+   Vue compiler still rewrites every selector here with the component's
+   data-v-* scope attribute. Nothing in this file is global.
+
+   GOTCHA: Vue also renames @keyframes inside a scoped block. The `spin`
+   keyframes below becomes `spin-<scopeId>` in the built CSS, so it is NOT
+   available to components in src/components/. They must declare their own.
+   See AGENTS.md.
+   ========================================================================== */
+
+/* Full App Shell */
+.app-shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(circle at 50% -20%, #1e1b4b 0%, #080c14 60%, #04070d 100%);
+  color: #f1f5f9;
+  overflow: hidden;
+}
+
+/* Navbar (brand, model status bar, right actions, mode switcher)
+   - moved to src/components/Navbar.vue */
+
+/* Main Content Area */
+.main-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 16px;
+  overflow: hidden;
+}
+
+/* HERO / DROPZONE VIEW - moved to src/components/UploadHero.vue
+   .btn-benchmark-nav - moved to src/components/Navbar.vue */
+
+/* kbd / .sr-only moved to src/components/UploadHero.vue.
+   .model-notice-pill went with it and was then deleted as dead CSS (no markup
+   anywhere in the app); see the note in that component. */
+
+/* 2-COLUMN ZERO-SCROLL STUDIO WORKSPACE */
+.studio-workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Stage Column (Left) */
+.stage-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+}
+
+/* Stage header (tags, tool switcher, backdrop) - moved to src/components/StageHeader.vue */
+
+/* Viewport + transform layer - moved to src/components/CanvasViewport.vue */
+
+/* Floating Zoom Toolbar - moved to src/components/ZoomToolbar.vue */
+
+/* Pan / clipped-layer / badges / slider / brush / selection overlays
+   - moved to src/components/CanvasViewport.vue */
+
+/* Select Mode Footer Toolbar + Stage Footer Bar - moved to src/components/StageFooter.vue */
+
+/* Sidebar Column + Telemetry Card - moved to src/components/TuningSidebar.vue */
+
+/* .spin + @keyframes spin and .version-badge - moved to src/components/Navbar.vue */
+
+/* Subjects Drawer - moved to src/components/SubjectsDrawer.vue */

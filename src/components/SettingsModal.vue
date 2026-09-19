@@ -81,6 +81,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { Settings } from 'lucide-vue-next'
+import { STORAGE_KEYS, DEFAULT_FONT_SIZE } from '../core/storageKeys.js'
 
 const props = defineProps({
   show: Boolean,
@@ -118,16 +119,16 @@ function setFontSize(val) {
 
 watch(() => props.show, (newVal) => {
   if (newVal) {
-    token.value = localStorage.getItem('purecut_hf_token') || ''
-    fontSize.value = localStorage.getItem('purecut_font_size') || 'normal'
-    const storedPrompt = localStorage.getItem('purecut_prompt_model_change')
+    token.value = localStorage.getItem(STORAGE_KEYS.hfToken) || ''
+    fontSize.value = localStorage.getItem(STORAGE_KEYS.fontSize) || DEFAULT_FONT_SIZE
+    const storedPrompt = localStorage.getItem(STORAGE_KEYS.promptModelChange)
     promptOnModelChange.value = storedPrompt === null ? true : storedPrompt === 'true'
   }
 })
 
 function save() {
-  localStorage.setItem('purecut_hf_token', token.value.trim())
-  localStorage.setItem('purecut_prompt_model_change', promptOnModelChange.value ? 'true' : 'false')
+  localStorage.setItem(STORAGE_KEYS.hfToken, token.value.trim())
+  localStorage.setItem(STORAGE_KEYS.promptModelChange, promptOnModelChange.value ? 'true' : 'false')
   emit('close')
 }
 </script>

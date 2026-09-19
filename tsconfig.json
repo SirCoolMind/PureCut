@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    /* Language / environment */
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+
+    /* Migration posture.
+       allowJs keeps the not-yet-migrated .js files compiling; checkJs stays off
+       so the existing untyped code does not drown the checker in noise. These
+       get tightened as files are converted (see the Stage 2 plan). */
+    "allowJs": true,
+    "checkJs": false,
+    "strict": false,
+
+    /* Vite consumes the source; tsc only ever type-checks. */
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "jsx": "preserve",
+
+    /* Path alias; mirror this in vite.config.js before using it in source. */
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue", "src/**/*.js"],
+  "exclude": ["node_modules", "dist", ".refactor-baseline", "graphify-out"]
+}
