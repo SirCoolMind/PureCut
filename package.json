@@ -11,7 +11,9 @@
     "context:report": "node scripts/context-report.mjs",
     "context:check": "node scripts/context-report.mjs --check",
     "test:regression": "node tests/e2e/regression.mjs",
-    "test:regression:fast": "node tests/e2e/regression.mjs --no-model"
+    "test:regression:fast": "node tests/e2e/regression.mjs --no-model",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
@@ -25,6 +27,7 @@
     "playwright": "^1.63.0",
     "typescript": "^5.9.3",
     "vite": "^6.1.0",
+    "vitest": "^5.0.1",
     "vue-tsc": "^3.3.11"
   }
 }

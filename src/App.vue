@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch, defin
 // Canvas handles are live module bindings, not refs - see src/core/canvasStore.ts.
 // Read directly; replaced only through that module's setters.
 import { maskCanvas, originalCanvas, clearCanvases } from './core/canvasStore.js'
+import { toImageCoords } from './core/geometry.js'
 import { useDisplayScale } from './composables/useDisplayScale.js'
 import { useWorkspaceUi } from './composables/useWorkspaceUi.js'
 import { useZoomPan } from './composables/useZoomPan.js'
@@ -273,49 +274,20 @@ const showInfoModal = ref(false)
 // Undo / redo / reset-to-raw-AI-mask now live in src/composables/useUndoRedo.ts.
 // saveUndoState() is called from the brush, selection and subject tools below.
 
-// Coordinate mapping: accurately maps pointer events from the transformed container to exact canvas pixels
+// Pointer → image-pixel mapping. The maths lives in src/core/geometry.ts so it can
+// be unit-tested without a DOM; this adapter only reads the live viewport box and
+// the current view state.
 function getCanvasCoords(e) {
-  // Use the enclosing viewport for the true unscaled container boundary
   const viewport = e.currentTarget.closest('.comparison-viewport')
-  const viewportRect = viewport ? viewport.getBoundingClientRect() : e.currentTarget.getBoundingClientRect()
-  
-  const containerW = viewportRect.width
-  const containerH = viewportRect.height
-  const imgRatio = imageDimensions.width / imageDimensions.height
-  const contRatio = containerW / containerH
+  const rect = (viewport || e.currentTarget).getBoundingClientRect()
 
-  let renderW = containerW, renderH = containerH
-  let offsetX = 0, offsetY = 0
-
-  if (imgRatio > contRatio) {
-    // Image is wider — pillarboxed vertically
-    renderH = containerW / imgRatio
-    offsetY = (containerH - renderH) / 2
-  } else {
-    // Image is taller — letterboxed horizontally
-    renderW = containerH * imgRatio
-    offsetX = (containerW - renderW) / 2
-  }
-
-  // Pointer position relative to viewport center
-  const centerRelX = (e.clientX - viewportRect.left) - containerW / 2
-  const centerRelY = (e.clientY - viewportRect.top) - containerH / 2
-
-  // Invert CSS transforms (panOffset and zoomLevel centered at 50% 50%)
-  const unzoomedCenterX = (centerRelX - panOffset.x) / zoomLevel.value
-  const unzoomedCenterY = (centerRelY - panOffset.y) / zoomLevel.value
-
-  const unzoomedX = unzoomedCenterX + containerW / 2
-  const unzoomedY = unzoomedCenterY + containerH / 2
-
-  // Map from unzoomed image layout box to original image pixel coordinates
-  const pixelX = (unzoomedX - offsetX) * (imageDimensions.width / renderW)
-  const pixelY = (unzoomedY - offsetY) * (imageDimensions.height / renderH)
-
-  return {
-    x: Math.max(0, Math.min(imageDimensions.width, pixelX)),
-    y: Math.max(0, Math.min(imageDimensions.height, pixelY))
-  }
+  return toImageCoords(e.clientX, e.clientY, rect, {
+    imageWidth: imageDimensions.width,
+    imageHeight: imageDimensions.height,
+    zoom: zoomLevel.value,
+    panX: panOffset.x,
+    panY: panOffset.y
+  })
 }
 
 // The brush engine now lives in src/composables/useBrush.ts. Its handlers are
