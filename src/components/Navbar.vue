@@ -15,8 +15,9 @@
  * Extracted verbatim (markup + its scoped CSS) from App.vue's template during the
  * AI-context refactor; no behaviour was changed.
  */
-import { Sparkles, RotateCcw, Wrench, Monitor, Settings, Type } from 'lucide-vue-next'
+import { Sparkles, RotateCcw, Wrench, Monitor, Settings } from 'lucide-vue-next'
 import { appVersion } from '../constants.js'
+import FontSizeButton from './FontSizeButton.vue'
 import ModelStatusBar from './ModelStatusBar.vue'
 
 defineProps({
@@ -39,7 +40,13 @@ defineProps({
   /** 'compact' | 'normal' | 'medium' | 'large' */
   fontSize: { type: String, required: true },
   /** 'standard' | 'power' */
-  userMode: { type: String, required: true }
+  userMode: { type: String, required: true },
+  /**
+   * True once an image is loaded. The two tuning modes only mean something with
+   * a workspace open, so they are disabled on the upload page and re-enabled the
+   * moment there is a cutout to tune.
+   */
+  isWorkspaceOpen: { type: Boolean, default: false }
 })
 
 defineEmits([
@@ -103,14 +110,7 @@ defineEmits([
       </button>
 
       <div class="mode-toggle-group">
-        <button
-          class="btn-font-scale"
-          @click="$emit('cycle-font-size')"
-          :title="`Interface Font Size: ${fontSize.toUpperCase()} (Click to cycle: Small, Medium, Large, Extra Large)`"
-        >
-          <Type :size="13" />
-          <span class="font-scale-tag">{{ fontSize === 'compact' ? 'S' : fontSize === 'normal' ? 'M' : fontSize === 'medium' ? 'L' : 'XL' }}</span>
-        </button>
+        <FontSizeButton :font-size="fontSize" @cycle="$emit('cycle-font-size')" />
         <button
           class="btn-settings"
           @click="$emit('open-settings')"
@@ -121,12 +121,16 @@ defineEmits([
         </button>
         <button
           :class="['mode-btn', { active: userMode === 'standard' }]"
+          :disabled="!isWorkspaceOpen"
+          :title="isWorkspaceOpen ? 'Quick presets mode' : 'Load an image to enable tuning modes'"
           @click="$emit('update:userMode', 'standard')"
         >
           Standard
         </button>
         <button
           :class="['mode-btn', { active: userMode === 'power' }]"
+          :disabled="!isWorkspaceOpen"
+          :title="isWorkspaceOpen ? 'Live canvas controls mode' : 'Load an image to enable tuning modes'"
           @click="$emit('update:userMode', 'power')"
         >
           <Wrench :size="12" /> Power User
@@ -240,33 +244,11 @@ defineEmits([
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.btn-font-scale {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #a5b4fc;
-  padding: 3px 7px;
-  border-radius: 6px;
-  font-size: 11px;
-  cursor: pointer;
+/* FontScaleButton carries its own look; this only spaces it from the mode
+   buttons. A scoped rule CAN reach a child's root element, which is why this
+   works without the parent needing the child's styles. */
+.mode-toggle-group > .btn-font-scale {
   margin-right: 3px;
-  transition: all 0.2s ease;
-}
-.btn-font-scale:hover {
-  background: rgba(99, 102, 241, 0.2);
-  border-color: rgba(99, 102, 241, 0.4);
-  color: #ffffff;
-}
-.font-scale-tag {
-  font-size: 9.5px;
-  font-weight: 700;
-  background: #6366f1;
-  color: white;
-  padding: 1px 4px;
-  border-radius: 4px;
-  line-height: 1;
 }
 
 .mode-btn {
@@ -288,6 +270,19 @@ defineEmits([
   background: #6366f1;
   color: white;
   box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+}
+
+/* The tuning modes need a loaded image, so they are inert on the upload page.
+   Opacity plus a not-allowed cursor makes that readable without hiding them -
+   the user can still see the modes exist. */
+.mode-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.mode-btn:disabled:hover {
+  background: transparent;
+  color: #94a3b8;
 }
 
 .btn-benchmark-nav {

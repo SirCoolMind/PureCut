@@ -61,9 +61,17 @@ html, body, #app {
   width: calc(100vw / var(--ui-zoom, 1)) !important;
   transition: zoom 0.2s ease;
 }
-/* Modals scale proportionally and remain perfectly centered */
-.modal-container, .info-modal {
+/* Modals scale proportionally and remain perfectly centered. `.showcase-page` is
+   the full-screen Model Showcase: it renders outside `.app-shell`, so without
+   this entry its own font-size control would set the attribute but nothing on
+   screen would change. */
+.modal-container, .info-modal, .showcase-page {
   zoom: var(--ui-zoom, 1);
+  transition: zoom 0.2s ease;
+}
+
+/* The showcase already has its own transition on the root; keep the zoom one. */
+.showcase-page {
   transition: zoom 0.2s ease;
 }
 
@@ -419,3 +427,4 @@ html, body, #app {
   white-space: nowrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
+

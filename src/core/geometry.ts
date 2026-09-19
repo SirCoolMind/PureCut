@@ -47,6 +47,46 @@ export interface ImagePoint {
   y: number
 }
 
+/** Where an `object-fit: contain` media box sits inside its container. */
+export interface ContainBox {
+  /** Rendered width of the media, in container CSS pixels. */
+  renderW: number
+  /** Rendered height of the media, in container CSS pixels. */
+  renderH: number
+  /** Left edge of the media inside the container, in CSS pixels. */
+  offsetX: number
+  /** Top edge of the media inside the container, in CSS pixels. */
+  offsetY: number
+}
+
+/**
+ * Resolve the letterboxed / pillarboxed box an `object-fit: contain` element
+ * occupies inside its container.
+ *
+ * Shared by the pointer→pixel mapping and by the viewport's brush-cursor guide,
+ * which both need the image's on-screen rectangle: one subtracts it, the other
+ * draws on top of it. Keeping the arithmetic in one place is what guarantees the
+ * cursor circle and the painted stroke agree.
+ */
+export function containBox(
+  containerWidth: number,
+  containerHeight: number,
+  imageWidth: number,
+  imageHeight: number
+): ContainBox {
+  const imgRatio = imageWidth / imageHeight
+  const contRatio = containerWidth / containerHeight
+
+  if (imgRatio > contRatio) {
+    // Image is wider - pillarboxed vertically
+    const renderH = containerWidth / imgRatio
+    return { renderW: containerWidth, renderH, offsetX: 0, offsetY: (containerHeight - renderH) / 2 }
+  }
+  // Image is taller - letterboxed horizontally
+  const renderW = containerHeight * imgRatio
+  return { renderW, renderH: containerHeight, offsetX: (containerWidth - renderW) / 2, offsetY: 0 }
+}
+
 /**
  * Map a pointer position to the source image's pixel coordinates.
  *
@@ -62,23 +102,13 @@ export function toImageCoords(
 ): ImagePoint {
   const containerW = viewportRect.width
   const containerH = viewportRect.height
-  const imgRatio = geometry.imageWidth / geometry.imageHeight
-  const contRatio = containerW / containerH
 
-  let renderW = containerW
-  let renderH = containerH
-  let offsetX = 0
-  let offsetY = 0
-
-  if (imgRatio > contRatio) {
-    // Image is wider - pillarboxed vertically
-    renderH = containerW / imgRatio
-    offsetY = (containerH - renderH) / 2
-  } else {
-    // Image is taller - letterboxed horizontally
-    renderW = containerH * imgRatio
-    offsetX = (containerW - renderW) / 2
-  }
+  const { renderW, renderH, offsetX, offsetY } = containBox(
+    containerW,
+    containerH,
+    geometry.imageWidth,
+    geometry.imageHeight
+  )
 
   // Pointer position relative to viewport center
   const centerRelX = (clientX - viewportRect.left) - containerW / 2

@@ -23,6 +23,7 @@ import ProcessingOverlay from './components/ProcessingOverlay.vue'
 import UploadHero from './components/UploadHero.vue'
 import ModelChangePrompt from './components/ModelChangePrompt.vue'
 import ReplaceImagePrompt from './components/ReplaceImagePrompt.vue'
+import NewImageConfirmPrompt from './components/NewImageConfirmPrompt.vue'
 import SubjectsDrawer from './components/SubjectsDrawer.vue'
 import ZoomToolbar from './components/ZoomToolbar.vue'
 import StageHeader from './components/StageHeader.vue'
@@ -169,15 +170,20 @@ const {
   saveUndoState
 })
 
-// Image intake: picker, drag & drop, paste, copy, and the replace-image prompt.
+// Image intake: picker, drag & drop, paste, copy, and the two discard prompts
+// (replace-image for incoming files, start-over for the New button).
 const {
   fileInput,
   showReplaceImagePrompt,
+  showNewImagePrompt,
   pendingNewImageFile,
   pendingNewImageThumbnail,
   confirmAndProcessImage,
   confirmReplaceImage,
   cancelReplaceImage,
+  requestNewImage,
+  confirmNewImage,
+  cancelNewImage,
   onFileSelect,
   onDrop,
   onPaste,
@@ -274,11 +280,42 @@ const showInfoModal = ref(false)
 // Pointer → image-pixel mapping. The maths lives in src/core/geometry.ts so it can
 // be unit-tested without a DOM; this adapter only reads the live viewport box and
 // the current view state.
+//
+// The brush takes a shortcut that the selection tools cannot: the brush surface IS
+// the image box (CanvasViewport pins it there), so the pointer can be mapped
+// straight against that element's own rectangle. That is deliberately the SAME
+// rectangle the cursor guide is positioned in, which makes "the ring is drawn where
+// the stroke lands" true by construction rather than by two independent
+// calculations that happen to agree. It also means a stale measured viewport size
+// can never desynchronise the ring from the paint.
+//
+// Everything else (selection marquee, wand, lasso) works on a full-viewport surface
+// and still needs the letterbox maths, which is derived from the viewport's CONTENT
+// box - `getBoundingClientRect()` includes the 1px border, while the transform layer
+// is `inset: 0` inside it.
 function getCanvasCoords(e) {
-  const viewport = e.currentTarget.closest('.comparison-viewport')
-  const rect = (viewport || e.currentTarget).getBoundingClientRect()
+  const brushSurface = e.currentTarget?.closest?.('.brush-interaction-surface')
+  if (brushSurface) {
+    const rect = brushSurface.getBoundingClientRect()
+    if (rect.width && rect.height) {
+      const x = ((e.clientX - rect.left) / rect.width) * imageDimensions.width
+      const y = ((e.clientY - rect.top) / rect.height) * imageDimensions.height
+      return {
+        x: Math.max(0, Math.min(imageDimensions.width, x)),
+        y: Math.max(0, Math.min(imageDimensions.height, y))
+      }
+    }
+  }
 
-  return toImageCoords(e.clientX, e.clientY, rect, {
+  const el = e.currentTarget.closest('.comparison-viewport') || e.currentTarget
+  const rect = el.getBoundingClientRect()
+
+  return toImageCoords(e.clientX, e.clientY, {
+    left: rect.left + (el.clientLeft || 0),
+    top: rect.top + (el.clientTop || 0),
+    width: el.clientWidth || rect.width,
+    height: el.clientHeight || rect.height
+  }, {
     imageWidth: imageDimensions.width,
     imageHeight: imageDimensions.height,
     zoom: zoomLevel.value,
@@ -302,6 +339,14 @@ function reset() {
   statusMessage.value = ''
   undoHistory.value = []
   redoHistory.value = []
+}
+
+// "New" no longer resets straight away: a workspace full of brush and selection
+// work is expensive to lose, so useImageInput raises the confirm prompt first and
+// this only runs once the user accepts.
+function confirmStartOver() {
+  confirmNewImage()
+  reset()
 }
 
 // When switching modes, initialize preview or manage selection state
@@ -353,6 +398,7 @@ onUnmounted(() => {
       :browser-zoom-level="browserZoomLevel"
       :font-size="fontSize"
       :user-mode="userMode"
+      :is-workspace-open="!!originalUrl"
       @model-change="handleModelSelectChange"
       @preload="handlePreload"
       @clear-cache="clearAllCache"
@@ -396,9 +442,14 @@ onUnmounted(() => {
             :subjects-drawer-open="showSubjectsDrawer"
             :active-tool="activeTool"
             :preview-bg="previewBg"
+            :copied="copied"
+            :can-copy="!!resultBlob"
+            :result-url="resultUrl"
             @toggle-subjects="showSubjectsDrawer = !showSubjectsDrawer"
             @update:active-tool="activeTool = $event"
             @update:preview-bg="previewBg = $event"
+            @reset="requestNewImage"
+            @copy="copyToClipboard"
           />
 
           <!-- Dynamic Viewport with Wheel Zoom & Pan Support -->
@@ -409,6 +460,9 @@ onUnmounted(() => {
             :result-url="resultUrl"
             :original-url="originalUrl"
             :slider-position="sliderPosition"
+            :image-width="imageDimensions.width"
+            :image-height="imageDimensions.height"
+            :brush-size="brushSize"
             :has-selection="hasSelection"
             :is-selecting="isSelecting"
             :show-outline="showOutline"
@@ -446,10 +500,6 @@ onUnmounted(() => {
             :select-shape="selectShape"
             :wand-tolerance="wandTolerance"
             :has-selection="hasSelection"
-            :copied="copied"
-            :can-copy="!!resultBlob"
-            :result-url="resultUrl"
-            :file-name="fileName"
             @update:brush-mode="brushMode = $event"
             @update:brush-size="brushSize = $event"
             @undo="handleUndo"
@@ -458,8 +508,6 @@ onUnmounted(() => {
             @update:wand-tolerance="wandTolerance = $event"
             @apply-selection="applySelectionAction"
             @clear-selection="clearSelection"
-            @reset="reset"
-            @copy="copyToClipboard"
           />
         </div>
 
@@ -498,6 +546,16 @@ onUnmounted(() => {
       @confirm="confirmReplaceImage"
     />
 
+    <!-- "New" / Start Over Confirmation Prompt Modal -->
+    <NewImageConfirmPrompt
+      :show="showNewImagePrompt"
+      :current-image-thumbnail="originalUrl"
+      :current-file-name="fileName"
+      :current-model-meta="currentModelMeta"
+      @close="cancelNewImage"
+      @confirm="confirmStartOver"
+    />
+
     <!-- Version / Changelog / Roadmap / Storage Modal -->
     <SettingsModal
       :show="showSettingsModal"
@@ -519,7 +577,9 @@ onUnmounted(() => {
     <!-- Giselle Model Benchmark Showcase Page -->
     <ShowcaseModal
       v-if="showBenchmarkPage"
+      :font-size="fontSize"
       @back="showBenchmarkPage = false"
+      @cycle-font-size="cycleFontSize"
     />
   </div>
 </template>

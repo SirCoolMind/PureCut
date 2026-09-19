@@ -1,6 +1,8 @@
 /**
- * Image intake: file picker, drag & drop, paste, clipboard copy, and the
- * "replace the current image?" confirmation guarding the first three.
+ * Image intake: file picker, drag & drop, paste, clipboard copy, and the two
+ * confirmations that guard the current workspace: the "replace the current
+ * image?" prompt for incoming files, and the "start over?" prompt for the New
+ * button.
  *
  * `onFileSelect` / `onDrop` / `onPaste` all funnel into `confirmAndProcessImage()`,
  * which either hands the file straight to `processImage()` or stages it behind the
@@ -47,6 +49,30 @@ export function useImageInput({ originalUrl, resultBlob, copied, processImage }:
   const showReplaceImagePrompt = ref(false)
   const pendingNewImageFile = ref<File | null>(null)
   const pendingNewImageThumbnail = ref<string | null>(null)
+
+  // "Start over?" confirmation, shown when New is pressed while a workspace is
+  // open. It has nothing staged - the image already on screen is the one that
+  // would be discarded, so it previews `originalUrl` itself.
+  const showNewImagePrompt = ref(false)
+
+  function requestNewImage() {
+    showNewImagePrompt.value = true
+  }
+
+  function cancelNewImage() {
+    showNewImagePrompt.value = false
+  }
+
+  /**
+   * Close the prompt and let the caller discard the workspace.
+   *
+   * The actual reset stays in App.vue's `reset()`, because that is where every
+   * per-image ref and the canvases are cleared - this composable only owns the
+   * confirmation that guards it.
+   */
+  function confirmNewImage() {
+    showNewImagePrompt.value = false
+  }
 
   function confirmAndProcessImage(file: File) {
     if (originalUrl.value) {
@@ -124,11 +150,15 @@ export function useImageInput({ originalUrl, resultBlob, copied, processImage }:
   return {
     fileInput,
     showReplaceImagePrompt,
+    showNewImagePrompt,
     pendingNewImageFile,
     pendingNewImageThumbnail,
     confirmAndProcessImage,
     confirmReplaceImage,
     cancelReplaceImage,
+    requestNewImage,
+    confirmNewImage,
+    cancelNewImage,
     onFileSelect,
     onDrop,
     onPaste,

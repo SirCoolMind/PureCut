@@ -17,13 +17,23 @@ import {
 import ShowcaseSliderStage from './ShowcaseSliderStage.vue'
 import ShowcaseDiagnosis from './ShowcaseDiagnosis.vue'
 import ShowcaseGallery from './ShowcaseGallery.vue'
+import FontSizeButton from './FontSizeButton.vue'
+
+// The showcase is a fixed full-screen page rendered OUTSIDE `.app-shell`, so it
+// does not inherit the shell's zoom. It needs its own font-scale affordance
+// (rendered in the header, top right) and the `fontSize` prop to feed it; the
+// cycle itself is re-emitted to App.vue, which owns `useDisplayScale`.
+defineProps({
+  /** 'compact' | 'normal' | 'medium' | 'large' - drives the size badge. */
+  fontSize: { type: String, default: 'normal' }
+})
 
 // `open-in-studio` was declared here and never emitted - no `emit('open-in-studio')`
 // call ever existed, so removing it cannot change behaviour. It is gone because
 // the declaration misled readers into thinking a caller existed. The intent (jump
 // from a showcase cutout into the studio) is still unimplemented; if it is built,
 // declare the event then, together with the listener.
-const emit = defineEmits(['back'])
+const emit = defineEmits(['back', 'cycle-font-size'])
 
 const baseUrl = import.meta.env.BASE_URL || './'
 
@@ -124,6 +134,10 @@ function downloadCutout(modelKey) {
       </div>
 
       <div class="header-right">
+        <!-- Interface font scale. The showcase sits outside the app shell, so it
+             needs its own copy of this control; the click is re-emitted to App.vue. -->
+        <FontSizeButton :font-size="fontSize" @cycle="emit('cycle-font-size')" />
+
         <div class="backdrop-picker">
           <span class="picker-label">Backdrop:</span>
           <button
@@ -271,6 +285,12 @@ function downloadCutout(modelKey) {
   font-weight: 600;
   margin: 0;
   color: #f8fafc;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
 }
 
 .backdrop-picker {

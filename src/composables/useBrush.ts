@@ -20,6 +20,10 @@
  * `brushMode` and `brushSize` are returned because the template binds to them
  * (`v-model.number` on the size slider), so they must stay writable refs.
  *
+ * The on-canvas cursor guide is NOT here: it is pure viewport geometry, so
+ * CanvasViewport owns it (it already knows the image's rendered box). This
+ * composable stays responsible only for painting.
+ *
  * Extracted verbatim from App.vue's script during the AI-context refactor; no
  * behaviour was changed.
  */
@@ -84,7 +88,6 @@ export function useBrush({
     // Draw a dot for single-click
     maskCtx.fillStyle = maskCtx.strokeStyle
     maskCtx.save()
-    maskCtx.globalCompositeOperation = maskCtx.globalCompositeOperation
     maskCtx.beginPath()
     maskCtx.arc(lastPoint.x, lastPoint.y, brushSize.value, 0, Math.PI * 2)
     maskCtx.fill()

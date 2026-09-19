@@ -1,7 +1,11 @@
 <script setup>
 /**
- * The stage footer: the per-tool hint / controls on the left, and the export
- * actions (New Photo, Copy Cutout, Download) on the right.
+ * The stage footer: only the per-tool hint / controls now.
+ *
+ * The export actions (New, Copy, Download PNG) used to live here on the right.
+ * They moved up into StageHeader's meta row, where they sit level with the file
+ * name and size they act on. The `.stage-footer` shell keeps its flex row so the
+ * toolbar stays left-aligned exactly as before.
  *
  * Presentational and stateless. Every value it shows arrives as a prop and every
  * interaction leaves as an emit, so App.vue keeps owning the refs - including the
@@ -13,11 +17,8 @@
  * `selectShape`'s pills did two things at once (`selectShape = x; clearSelection()`);
  * the clearing now belongs to the parent's handler for `select-shape`, which keeps
  * "changing shape drops the old selection" in one place.
- *
- * Extracted verbatim (markup + its scoped CSS) from App.vue's template during the
- * AI-context refactor; no behaviour was changed.
  */
-import { Eraser, Paintbrush, Undo2, Magnet, Lasso, PenTool, BoxSelect, Wand2, RotateCcw, Check, Copy, Download } from 'lucide-vue-next'
+import { Eraser, Paintbrush, Undo2, Magnet, Lasso, PenTool, BoxSelect, Wand2 } from 'lucide-vue-next'
 
 defineProps({
   /** 'slider' | 'brush' | 'select' | 'pan' */
@@ -33,15 +34,7 @@ defineProps({
   /** Magic wand colour tolerance. */
   wandTolerance: { type: Number, required: true },
   /** Whether an area is currently selected. */
-  hasSelection: { type: Boolean, default: false },
-  /** "Copied!" flag driving the copy button's label. */
-  copied: { type: Boolean, default: false },
-  /** True once a cutout blob exists and can be copied. */
-  canCopy: { type: Boolean, default: false },
-  /** Object URL of the cutout; the download link only exists once it is set. */
-  resultUrl: { type: String, default: null },
-  /** Loaded file's name, used to build the download filename. */
-  fileName: { type: String, default: '' }
+  hasSelection: { type: Boolean, default: false }
 })
 
 defineEmits([
@@ -52,9 +45,7 @@ defineEmits([
   'select-shape',
   'update:wandTolerance',
   'apply-selection',
-  'clear-selection',
-  'reset',
-  'copy'
+  'clear-selection'
 ])
 </script>
 
@@ -83,7 +74,7 @@ defineEmits([
 
         <div class="size-control">
           <span>Size: <strong>{{ brushSize }}px</strong></span>
-          <input type="range" min="8" max="100" :value="brushSize" @input="$emit('update:brushSize', Number($event.target.value))" class="mini-range" />
+          <input type="range" min="8" max="100" :value="brushSize" @input="$emit('update:brushSize', Number($event.target.value))" class="mini-range ui-range" />
         </div>
 
         <button class="btn-mini" @click="$emit('undo')" :disabled="undoHistoryLength <= 1" title="Undo stroke">
@@ -136,7 +127,7 @@ defineEmits([
 
         <div v-if="selectShape === 'wand'" class="size-control">
           <span>Tolerance: <strong>{{ wandTolerance }}</strong></span>
-          <input type="range" min="1" max="100" :value="wandTolerance" @input="$emit('update:wandTolerance', Number($event.target.value))" class="mini-range" />
+          <input type="range" min="1" max="100" :value="wandTolerance" @input="$emit('update:wandTolerance', Number($event.target.value))" class="mini-range ui-range" />
         </div>
 
         <!-- Action Buttons: Visible when an area is selected -->
@@ -174,27 +165,6 @@ defineEmits([
       <span v-else-if="activeTool === 'pan'" class="slider-hint">
         ✋ Click and drag anywhere to pan the canvas
       </span>
-    </div>
-
-    <!-- Right Action Buttons -->
-    <div class="action-buttons">
-      <button class="btn-secondary" @click="$emit('reset')" title="Upload another photo">
-        <RotateCcw :size="14" /> New Photo
-      </button>
-
-      <button class="btn-secondary" @click="$emit('copy')" :disabled="!canCopy">
-        <component :is="copied ? Check : Copy" :size="14" />
-        {{ copied ? 'Copied!' : 'Copy Cutout' }}
-      </button>
-
-      <a
-        v-if="resultUrl"
-        :href="resultUrl"
-        :download="`purecut_${fileName.replace(/\.[^/.]+$/, '')}.png`"
-        class="btn-cta"
-      >
-        <Download :size="15" /> Download High-Res PNG
-      </a>
     </div>
   </div>
 </template>
@@ -323,10 +293,12 @@ defineEmits([
   color: #818cf8;
 }
 
+/* Sizing only - the rail, handle and hover states come from the shared
+   `input[type="range"].ui-range` rules in src/styles/global.css, which both this
+   component and TuningSidebar use. Setting a height here would override that
+   control's hit area, so this only fixes the width. */
 .mini-range {
-  width: 70px;
-  height: 4px;
-  accent-color: #6366f1;
+  width: 84px;
   cursor: pointer;
 }
 
@@ -346,53 +318,5 @@ defineEmits([
 .btn-mini:disabled {
   opacity: 0.35;
   cursor: not-allowed;
-}
-
-.action-buttons {
-  display: flex;
-  gap: 8px;
-}
-
-/* Duplicated in src/components/UploadHero.vue, where the hero's "Choose Image"
-   button needs the same look in its own scope. */
-.btn-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  color: white;
-  border: none;
-  padding: 7px 16px;
-  border-radius: 8px;
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-  text-decoration: none;
-  box-shadow: 0 3px 12px rgba(99, 102, 241, 0.35);
-  transition: all 0.2s ease;
-}
-
-.btn-cta:hover {
-  opacity: 0.95;
-  transform: translateY(-1px);
-}
-
-.btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(255, 255, 255, 0.07);
-  color: #e2e8f0;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 7px 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.12);
 }
 </style>

@@ -1,0 +1,127 @@
+/* ==========================================================================
+   viewport-controls.css — shared, unscoped controls used across components.
+
+   WHY THIS IS A SEPARATE FILE, UNSCOPED, AND IMPORTED FROM main.js
+
+   Everything here is shared by more than one component, and scoped styles do not
+   cross a component boundary, so a per-file copy would be several copies that
+   drift apart. `global.css` is already close to the 450-line file budget, hence
+   a file of its own.
+
+   1. `.ui-range` — the visible range slider. Same control in StageFooter (brush
+      size, wand tolerance) and TuningSidebar (the three power-user sliders).
+
+      NOT for invisible overlays: `.range-overlay` (CanvasViewport's
+      split-comparison drag target) and `.slider-touch-range`
+      (ShowcaseSliderStage's equivalent) are deliberately unrendered full-surface
+      inputs layered over a custom handle. They must NOT get this class, or they
+      would paint a rail on top of the artwork.
+
+      Why not `accent-color` alone: the browser default track is dark grey on a
+      dark-slate panel, so the grab handle was nearly invisible until you found it
+      by accident. Here the rail is a light translucent bar and the handle is a
+      white knob with an indigo ring and glow, which stays legible against every
+      backdrop. The input keeps a real 20px hit area while the visible rail stays
+      slim.
+
+   2. `.brush-cursor-guide` — the transparent ring that stands in for the mouse
+      cursor while the Magic Brush is active, sized to the chosen brush diameter.
+      It is rendered inside CanvasViewport, which positions and sizes it inline;
+      only its look lives here.
+   ========================================================================== */
+
+input[type="range"].ui-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+}
+
+/* --- WebKit / Blink --- */
+input[type="range"].ui-range::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+input[type="range"].ui-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  /* Centres a 16px knob on an 8px rail (plus its 1px border). */
+  margin-top: -5px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.28), 0 1px 4px rgba(0, 0, 0, 0.6);
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+input[type="range"].ui-range:hover::-webkit-slider-thumb {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.35), 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+input[type="range"].ui-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 5px rgba(129, 140, 248, 0.55), 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+/* --- Firefox --- */
+input[type="range"].ui-range::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+input[type="range"].ui-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.28), 0 1px 4px rgba(0, 0, 0, 0.6);
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+input[type="range"].ui-range:hover::-moz-range-thumb {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.35), 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+input[type="range"].ui-range:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 5px rgba(129, 140, 248, 0.55), 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+input[type="range"].ui-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* --------------------------------------------------------------------------
+   Magic Brush cursor guide
+   --------------------------------------------------------------------------
+   A transparent ring centred on the pointer, showing the exact area a stroke
+   will affect. It is a border with nothing inside, so the artwork stays visible
+   through it, plus a dark outline so the ring reads against a light backdrop and
+   a soft glow so it reads against a dark one.
+
+   Position and diameter are set inline by CanvasViewport (they depend on the
+   pointer and the brush size), so no width/height/transform here. */
+.brush-cursor-guide {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 6px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.04);
+}

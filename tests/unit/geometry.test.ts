@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toImageCoords } from '../../src/core/geometry.js'
+import { containBox, toImageCoords } from '../../src/core/geometry.js'
 
 /**
  * Unit tests for the pointer → pixel mapping.
@@ -87,5 +87,44 @@ describe('toImageCoords', () => {
     // clamp to the image's first row rather than going negative.
     expect(toImageCoords(200, 50, square, wide).y).toBe(0)
     expect(toImageCoords(200, 350, square, wide).y).toBe(500)
+  })
+})
+
+describe('containBox', () => {
+  it('fills the container when the aspect ratios agree', () => {
+    expect(containBox(400, 400, 800, 800)).toEqual({
+      renderW: 400,
+      renderH: 400,
+      offsetX: 0,
+      offsetY: 0
+    })
+  })
+
+  it('pillarboxes a wide image: full width, centred vertically', () => {
+    // 2:1 image in a square container -> 400x200, with 100px bands top and bottom.
+    expect(containBox(400, 400, 1000, 500)).toEqual({
+      renderW: 400,
+      renderH: 200,
+      offsetX: 0,
+      offsetY: 100
+    })
+  })
+
+  it('letterboxes a tall image: full height, centred horizontally', () => {
+    // 1:2 image in a square container -> 200x400, with 100px bands left and right.
+    expect(containBox(400, 400, 1000, 2000)).toEqual({
+      renderW: 200,
+      renderH: 400,
+      offsetX: 100,
+      offsetY: 0
+    })
+  })
+
+  it('agrees with toImageCoords on where the image box starts', () => {
+    // The viewport and the pointer maths must use the same box, otherwise the
+    // brush paints at an offset. The box's top-left corner in container space is
+    // exactly the point that maps to the image's (0, 0).
+    const box = containBox(400, 400, 1000, 500)
+    expect(toImageCoords(box.offsetX, box.offsetY, square, wide)).toEqual({ x: 0, y: 0 })
   })
 })

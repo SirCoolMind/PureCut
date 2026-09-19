@@ -162,10 +162,15 @@ still a rule).
   (`schedulePreview`) and defer non-critical analysis (`detectSubjects` is
   already deferred with `setTimeout`).
 - Do not add `console.log` noise; the browser console is used for real errors.
-- Respect the size budget: no file over 450 lines, except `src/App.vue`, which
-  carries its own 600-line budget (`targetAppVueLines`). Run
-  `npm run context:report` before and after a large change; `npm run
+- Respect the size budget: no file over 800 lines (`maxFileLines` in
+  `scripts/context-report.mjs`), except `src/App.vue`, which carries its own
+  600-line budget (`targetAppVueLines`) and is the only file the budget excuses.
+  Run `npm run context:report` before and after a large change; `npm run
   context:check` is the gate and should exit 0.
+  The limit was raised from 450 by user request: it kept flagging files that were
+  over only because of explanatory comments and unavoidable scoped CSS, so each
+  fix was churn rather than improvement. 800 still catches a file that has
+  genuinely outgrown its single job.
 
 ## Known issues — report, do not silently fix
 
@@ -190,16 +195,17 @@ still a rule).
    taking the ~120 ms debounce. The de-fringe toggle beside them is called with
    no arguments and does debounce. Pre-existing; preserved deliberately during the
    extraction (see the note in `TuningSidebar.vue`), not fixed.
-8. `src/App.vue` (531 lines) is the last file over the 450-line budget, and it
-   carries its own 600-line `targetAppVueLines` rather than the 400 the session-1
-   plan named. The user has explicitly forgiven it: reaching 400 would mean either
-   compacting the component tags' attribute lists onto single lines (which keeps
-   the token count and only games the metric) or hoisting shared state into a
-   module (forbidden by constraint 7). Everything else the budget covers now
-   fits, so `npm run context:check` exits 0. Splitting the two former offenders
-   took three commits: `ShowcaseModal.vue` 1000 → 396 plus
+8. `src/App.vue` (561 lines) carries its own 600-line `targetAppVueLines` rather
+   than the general `maxFileLines`. The user has explicitly forgiven it: shrinking
+   it further would mean either compacting the component tags' attribute lists
+   onto single lines (which keeps the token count and only games the metric) or
+   hoisting shared state into a module (forbidden by constraint 7). Everything the
+   budget covers fits, so `npm run context:check` exits 0. Splitting the two
+   former offenders took three commits: `ShowcaseModal.vue` 1000 → 396 plus
    `ShowcaseSliderStage` / `ShowcaseDiagnosis` / `ShowcaseGallery`, and
-   `InfoModal.vue` 789 → 279 plus four `Info*Tab` components.
+   `InfoModal.vue` 789 → 279 plus four `Info*Tab` components. `maxFileLines` is
+   now 800 (raised from 450 by user request), so the general budget no longer
+   flags a file that is long only through comments and scoped CSS.
 
 ## Test layout
 

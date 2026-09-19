@@ -23,6 +23,20 @@ export async function checkLanding(h) {
   await checkVisible('.hero-section', 'hero/dropzone view rendered')
   await checkVisible('.dropzone-card', 'dropzone card rendered')
   await shoot(page, '01-hero')
+
+  // The Standard / Power User toggle only means something with a workspace open,
+  // so it must be inert on the upload page and enabled once an image is loaded
+  // (the studio checks assert the enabled half).
+  check(
+    'Standard mode button disabled on the upload page',
+    await page.locator('.mode-btn:has-text("Standard")').isDisabled(),
+    'Standard was clickable with no image loaded'
+  )
+  check(
+    'Power User mode button disabled on the upload page',
+    await page.locator('.mode-btn:has-text("Power User")').isDisabled(),
+    'Power User was clickable with no image loaded'
+  )
 }
 
 export async function checkFontScale(h) {

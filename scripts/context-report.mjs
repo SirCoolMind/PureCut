@@ -51,16 +51,18 @@ const APP_VUE = 'src/App.vue'
 /**
  * Budgets enforced by --check. Keep in sync with AGENTS.md.
  *
- * `targetAppVueLines` is deliberately looser than `maxFileLines`. App.vue is the
- * only file the budget excuses: the user has explicitly forgiven its line count,
- * because hitting 400 would mean either compacting the component tags' attribute
- * lists onto single lines (which keeps the token count and only games the metric)
- * or hoisting shared state into a module (forbidden by AGENTS.md constraint 7).
- * Everything else the budget covers - `src/`, `scripts/`, `tests/` - still has to
- * fit in `maxFileLines`, which is what keeps the check a real signal.
+ * `maxFileLines` was raised from 450 to 800 at the user's request: the 450 limit
+ * kept flagging files that were over budget only because of honest, explanatory
+ * comments and unavoidable scoped CSS, so the fix each time was to move code
+ * around purely to satisfy the number. 800 is a ceiling that still catches a file
+ * that has genuinely outgrown its job, without forcing that churn.
+ *
+ * `targetAppVueLines` stays where it is: App.vue is the shell that wires every
+ * composable together, the user has explicitly forgiven its line count, and it
+ * currently sits comfortably inside this figure.
  */
 const BUDGET = {
-  maxFileLines: 450,
+  maxFileLines: 800,
   targetAppVueLines: 600
 }
 

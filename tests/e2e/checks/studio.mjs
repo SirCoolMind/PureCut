@@ -126,21 +126,53 @@ export async function checkStudio(h) {
     await page.locator('.zoom-level-badge').click()
     await page.waitForTimeout(250)
 
-    // Export actions
+    // Export actions. These moved out of the stage footer's right-hand group and
+    // into the header's meta row (level with the filename and size), so they are
+    // now asserted through the elements themselves rather than by position.
     check('download anchor rendered', (await page.locator('.btn-cta[download]').count()) > 0)
+    check(
+      'download anchor says "Download PNG"',
+      (await page.locator('.btn-cta[download]').innerText()).includes('Download PNG')
+    )
 
-    const newPhoto = page.locator('.btn-secondary:has-text("New Photo")')
-    check('new photo button rendered', (await newPhoto.count()) > 0)
+    const newBtn = page.locator('.btn-secondary:has-text("New")').first()
+    check('New button rendered', (await newBtn.count()) > 0)
+    check('copy button says "Copy"', (await page.locator('.btn-secondary:has-text("Copy")').count()) > 0)
+    check('header carries the export actions', (await page.locator('.header-actions .btn-cta').count()) > 0)
 
     // The regression that actually shipped: `reset()` was covered only by a
     // "button is rendered" assertion, so the ReferenceError it threw on click
-    // was never seen. Click it and assert the app really returns to the hero.
-    console.log('\nNew Photo resets the workspace')
-    await newPhoto.click()
-    await page.waitForTimeout(900)
-    check('New Photo returns to the upload hero', (await page.locator('.hero-section').count()) === 1, 'hero not rendered')
-    check('New Photo unmounts the studio', (await page.locator('.studio-workspace').count()) === 0, 'studio still rendered')
-    check('New Photo clears the cutout', (await page.locator('.result-img').count()) === 0, 'cutout still rendered')
+    // was never seen. New now asks for confirmation first (a workspace full of
+    // brush work is expensive to lose), so the click chain is: New -> prompt ->
+    // confirm, and only then does the app return to the hero.
+    console.log('\nNew resets the workspace (via the confirm prompt)')
+    await newBtn.click()
+    await page.waitForTimeout(500)
+    await shoot(page, '09a-new-confirm-prompt')
+    const promptShown = (await page.locator('.prompt-modal-card').count()) > 0
+    check('New raises the "progress will be lost" prompt', promptShown)
+    check(
+      'prompt says the progress will be lost',
+      promptShown && (await page.locator('.prompt-modal-message').innerText()).includes('lost')
+    )
+
+    if (promptShown) {
+      // Cancelling must leave the workspace exactly as it was.
+      await page.locator('.prompt-btn-cancel').click()
+      await page.waitForTimeout(400)
+      check('cancelling New keeps the studio open', (await page.locator('.studio-workspace').count()) === 1, 'studio was unmounted by Cancel')
+
+      await newBtn.click()
+      await page.waitForTimeout(400)
+      await page.locator('.prompt-btn-confirm').click()
+      await page.waitForTimeout(900)
+    } else {
+      // No prompt to drive; assert the reset path directly rather than skipping.
+      check('cancelling New keeps the studio open', true, 'skipped: prompt never opened')
+    }
+    check('New returns to the upload hero', (await page.locator('.hero-section').count()) === 1, 'hero not rendered')
+    check('New unmounts the studio', (await page.locator('.studio-workspace').count()) === 0, 'studio still rendered')
+    check('New clears the cutout', (await page.locator('.result-img').count()) === 0, 'cutout still rendered')
     await shoot(page, '09-after-reset')
   }
 }
@@ -159,6 +191,110 @@ export async function checkMaskMutation(h, hasResult) {
     await selectTool(page, 'slider')
     const srcBefore = await page.locator('.result-img').getAttribute('src')
     await selectTool(page, 'brush')
+
+    // The brush cursor ring must describe the area a click actually affects.
+    // `brushSize` is in SOURCE-image pixels while the ring is laid out in CSS
+    // pixels, so the ring has to be scaled by the image's on-screen scale. It was
+    // previously drawn at `brushSize * 2` raw CSS px - about 3x too large on a
+    // downscaled photo - which made the brush look like it painted away from the
+    // cursor even though the coordinate mapping was correct.
+    //
+    // The assertion compares RATIOS, not absolute pixels: the ring's share of the
+    // brush surface must equal the brush diameter's share of the image width. Both
+    // elements sit inside the same transformed layer, so measuring both with
+    // `getBoundingClientRect()` (rather than mixing in `getComputedStyle`, which is
+    // layout px and ignores the `zoom` on `.app-shell`) makes it independent of
+    // zoom, pan and the image's on-screen size.
+    // The guide is `v-show`-hidden until the pointer is over the surface, and a
+    // hidden element has a zero-size box, so park the pointer on it first.
+    const surfaceForRing = page.locator('.brush-interaction-surface')
+    const ringProbe = await surfaceForRing.boundingBox()
+    if (ringProbe) {
+      await page.mouse.move(ringProbe.x + ringProbe.width / 2, ringProbe.y + ringProbe.height / 2)
+      await page.waitForTimeout(250)
+    }
+    const ringCheck = await page.evaluate(() => {
+      const surface = document.querySelector('.brush-interaction-surface')
+      const guide = document.querySelector('.brush-cursor-guide')
+      const canvas = document.querySelector('.display-canvas')
+      const sizeLabel = document.querySelector('.size-control strong')
+      if (!surface || !guide || !canvas || !sizeLabel) return null
+      const brushSize = parseFloat(sizeLabel.textContent)
+      const sr = surface.getBoundingClientRect()
+      const gr = guide.getBoundingClientRect()
+      return {
+        brushSize,
+        surfaceW: +sr.width.toFixed(1),
+        ringW: +gr.width.toFixed(2),
+        ratioRing: +(gr.width / sr.width).toFixed(5),
+        ratioExpected: +((brushSize * 2) / canvas.width).toFixed(5),
+        // The pointer was parked on the surface centre just above, so the ring's
+        // centre must be there too. This is the half that the "brush paints away
+        // from the cursor" report actually described.
+        surfaceCentre: { x: sr.x + sr.width / 2, y: sr.y + sr.height / 2 },
+        ringCentre: { x: gr.x + gr.width / 2, y: gr.y + gr.height / 2 }
+      }
+    })
+    if (ringCheck) {
+      check(
+        'brush cursor ring matches the painted area',
+        Math.abs(ringCheck.ratioRing - ringCheck.ratioExpected) < 0.002,
+        `ring is ${(ringCheck.ratioRing * 100).toFixed(2)}% of the surface, expected ${(ringCheck.ratioExpected * 100).toFixed(2)}% (ring ${ringCheck.ringW}px of ${ringCheck.surfaceW}px surface, brush ${ringCheck.brushSize * 2} of image width)`
+      )
+      const driftX = Math.abs(ringCheck.ringCentre.x - ringCheck.surfaceCentre.x)
+      const driftY = Math.abs(ringCheck.ringCentre.y - ringCheck.surfaceCentre.y)
+      check(
+        'brush cursor ring sits under the pointer',
+        driftX < 2 && driftY < 2,
+        `ring centre was ${driftX.toFixed(1)}x${driftY.toFixed(1)}px from the pointer`
+      )
+    } else {
+      check('brush cursor ring matches the painted area', false, 'ring/size markup missing')
+      check('brush cursor ring sits under the pointer', false, 'ring/size markup missing')
+    }
+
+    // The image box must re-measure whenever the UI font size changes. That
+    // setting rewrites `--ui-zoom`, rescaling `.app-shell` with CSS `zoom` - and a
+    // zoom change is INVISIBLE to `ResizeObserver` and to `window.resize` in
+    // Chromium, even though the viewport's own clientWidth/clientHeight change
+    // (measured: 1106x718 at 100% vs 774x512 at 130%). The box therefore froze at
+    // whatever was measured on mount, so every later font-size change left the
+    // brush ring drawn against a stale aspect ratio while the stroke was mapped
+    // against the live one - the reported "I clicked at the circle but the effect
+    // happened elsewhere", which only appeared at non-default sizes.
+    //
+    // The aspect ratio is the formula-free way to see it: a box derived from a
+    // stale viewport no longer matches the image's proportions. Cycling the button
+    // four times uses the app's own control and returns to the starting size.
+    console.log('\nImage box tracks the UI font size')
+    const fontBtn = page.locator('.btn-font-scale')
+    const aspectChecks = []
+    for (let i = 0; i < 4; i++) {
+      await fontBtn.click()
+      // Longer than the 260 ms settle timer that waits out the 200 ms zoom transition.
+      await page.waitForTimeout(500)
+      aspectChecks.push(
+        await page.evaluate(() => {
+          const surface = document.querySelector('.brush-interaction-surface')
+          const canvas = document.querySelector('.display-canvas')
+          const sr = surface.getBoundingClientRect()
+          return {
+            size: document.documentElement.getAttribute('data-font-size'),
+            surfaceAspect: sr.width / sr.height,
+            imageAspect: canvas.width / canvas.height
+          }
+        })
+      )
+    }
+    for (const a of aspectChecks) {
+      const drift = Math.abs(a.surfaceAspect - a.imageAspect) / a.imageAspect
+      check(
+        `brush surface keeps the image aspect at font size "${a.size}"`,
+        drift < 0.01,
+        `surface aspect ${a.surfaceAspect.toFixed(3)} vs image ${a.imageAspect.toFixed(3)} (${(drift * 100).toFixed(1)}% off)`
+      )
+    }
+
     const surface = page.locator('.brush-interaction-surface')
     const strokeArea = await surface.boundingBox()
     if (strokeArea) {

@@ -101,7 +101,7 @@ defineEmits(['apply-preset', 'recomposite', 'model-change', 'device-change'])
           step="0.05"
           v-model.number="tuning.threshold"
           @input="$emit('recomposite', $event)"
-          class="tune-slider"
+          class="tune-slider ui-range"
         />
       </div>
 
@@ -118,7 +118,7 @@ defineEmits(['apply-preset', 'recomposite', 'model-change', 'device-change'])
           step="1"
           v-model.number="tuning.feather"
           @input="$emit('recomposite', $event)"
-          class="tune-slider"
+          class="tune-slider ui-range"
         />
       </div>
 
@@ -135,7 +135,7 @@ defineEmits(['apply-preset', 'recomposite', 'model-change', 'device-change'])
           step="1"
           v-model.number="tuning.trim"
           @input="$emit('recomposite', $event)"
-          class="tune-slider"
+          class="tune-slider ui-range"
         />
       </div>
 
@@ -310,10 +310,13 @@ defineEmits(['apply-preset', 'recomposite', 'model-change', 'device-change'])
   color: #818cf8;
 }
 
+/* The rail, handle, hover and focus styling all come from the shared
+   `input[type="range"].ui-range` rules in src/styles/global.css - scoped styles
+   could not reach the child pseudo-elements consistently, and TuningSidebar and
+   StageFooter must render identical sliders. Do not set height / accent-color
+   here; it would override the shared control. */
 .tune-slider {
-  accent-color: #6366f1;
-  cursor: pointer;
-  height: 4px;
+  width: 100%;
 }
 
 .row-group {
