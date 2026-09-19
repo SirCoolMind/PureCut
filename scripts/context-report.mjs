@@ -85,8 +85,38 @@ async function measure(absPath) {
     path: relative(ROOT, absPath).split(sep).join('/'),
     lines,
     bytes: info.size,
-    tokens
+    tokens,
+    sections: absPath.endsWith('.vue') ? sectionBreakdown(content) : null
   }
+}
+
+/**
+ * Split an SFC into its `<script>` / `<template>` / `<style>` block sizes.
+ *
+ * A single 450-line budget applied to a .vue file is misleading on its own: a
+ * file can be 60% scoped CSS, which behaves nothing like 450 lines of logic. The
+ * breakdown is what makes the number actionable - it says which of the three
+ * blocks to split.
+ */
+function sectionBreakdown(content) {
+  const sections = []
+  const re = /^<(script|template|style)([^>]*)>\s*$/gm
+  let match
+  const starts = []
+  while ((match = re.exec(content)) !== null) {
+    starts.push({ tag: match[1], selfClosing: match[2].includes('src='), line: content.slice(0, match.index).split('\n').length })
+  }
+  const closing = /^<\/(script|template|style)>\s*$/gm
+  const ends = []
+  while ((match = closing.exec(content)) !== null) {
+    ends.push(content.slice(0, match.index).split('\n').length)
+  }
+  for (let i = 0; i < starts.length; i++) {
+    const end = ends[i] ?? starts[i].line
+    const extra = starts[i].selfClosing ? ' (external src)' : ''
+    sections.push(`${starts[i].tag}${extra} ${end - starts[i].line + 1}`)
+  }
+  return sections.join(', ')
 }
 
 function formatRow(file, isLargest) {
@@ -150,14 +180,23 @@ async function main() {
   console.log('')
   console.log(`Budget: no file over ${BUDGET.maxFileLines} lines; App.vue target <= ${BUDGET.targetAppVueLines}`)
 
+  // Where an oversized .vue keeps its lines: the number alone does not say
+  // whether to split logic, markup or styles.
+  const sfcOverBudget = measured.filter((f) => f.sections && f.lines > BUDGET.maxFileLines)
+  if (sfcOverBudget.length) {
+    console.log('')
+    console.log('Oversized .vue files - which block is to blame:')
+    for (const f of sfcOverBudget) console.log(`  - ${f.path}: ${f.lines} total  [${f.sections}]`)
+  }
+
   if (check) {
     const violations = measured.filter((f) => f.lines > BUDGET.maxFileLines)
     const appVueOver = appVue && appVue.lines > BUDGET.targetAppVueLines
     if (violations.length || appVueOver) {
       console.log('')
       console.log('BUDGET VIOLATIONS:')
-      for (const v of violations) console.log(`  - ${v.path}: ${v.lines} lines`)
-      if (appVueOver) console.log(`  - src/App.vue exceeds its target: ${appVue.lines} lines`)
+      for (const v of violations) console.log(`  - ${v.path}: ${v.lines} lines${v.sections ? `  [${v.sections}]` : ''}`)
+      if (appVueOver) console.log(`  - src/App.vue exceeds its target: ${appVue.lines} lines${appVue?.sections ? `  [${appVue.sections}]` : ''}`)
       process.exit(1)
     }
     console.log('')
