@@ -42,6 +42,7 @@ import {
 } from 'lucide-vue-next'
 import { appVersion, modelOptions } from './constants.js'
 import { detectSubjects, magicWandFloodFill, extractMaskContourSegments } from './detectionEngine.js'
+import { STORAGE_KEYS, cachedModelKey, FONT_SIZES, DEFAULT_FONT_SIZE } from './core/storageKeys.js'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -219,11 +220,11 @@ function resetBrowserZoom() {
 }
 
 // Accessibility Font Size & Interface Scaling
-const fontSize = ref(typeof localStorage !== 'undefined' ? (localStorage.getItem('purecut_font_size') || 'normal') : 'normal')
+const fontSize = ref(typeof localStorage !== 'undefined' ? (localStorage.getItem(STORAGE_KEYS.fontSize) || DEFAULT_FONT_SIZE) : 'normal')
 function applyFontSize(size) {
   fontSize.value = size
   if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('purecut_font_size', size)
+    localStorage.setItem(STORAGE_KEYS.fontSize, size)
   }
   if (typeof document !== 'undefined') {
     document.documentElement.setAttribute('data-font-size', size)
@@ -231,9 +232,8 @@ function applyFontSize(size) {
 }
 
 function cycleFontSize() {
-  const sizes = ['compact', 'normal', 'medium', 'large']
-  const nextIdx = (sizes.indexOf(fontSize.value) + 1) % sizes.length
-  applyFontSize(sizes[nextIdx])
+  const nextIdx = (FONT_SIZES.findIndex(s => s === fontSize.value) + 1) % FONT_SIZES.length
+  applyFontSize(FONT_SIZES[nextIdx])
 }
 
 const sliderPosition = ref(50)
@@ -265,7 +265,7 @@ const isClearingCache = ref(false)
 
 async function checkModelCacheStatus() {
   modelOptions.forEach(m => {
-    const isCached = localStorage.getItem(`purecut_cached_${m.id}`) === 'true'
+    const isCached = localStorage.getItem(cachedModelKey(m.id)) === 'true'
     cachedModels[m.id] = isCached
   })
 
@@ -320,7 +320,7 @@ async function clearAllCache() {
 
     // 4. Clear model cache flags in localStorage
     modelOptions.forEach(m => {
-      localStorage.removeItem(`purecut_cached_${m.id}`)
+      localStorage.removeItem(cachedModelKey(m.id))
       cachedModels[m.id] = false
     })
 
@@ -361,7 +361,7 @@ async function handlePreload() {
       }
     })
     cachedModels[selectedModel.value] = true
-    localStorage.setItem(`purecut_cached_${selectedModel.value}`, 'true')
+    localStorage.setItem(cachedModelKey(selectedModel.value), 'true')
     statusMessage.value = 'AI Model cached & ready!'
     setTimeout(() => { downloadProgress.isDownloading = false }, 1500)
   } catch (err) {
@@ -452,7 +452,7 @@ async function processImage(file) {
     rawMaskBlob = result.maskBlob
 
     cachedModels[selectedModel.value] = true
-    localStorage.setItem(`purecut_cached_${selectedModel.value}`, 'true')
+    localStorage.setItem(cachedModelKey(selectedModel.value), 'true')
 
     // Initialize mask canvas
     const maskImg = new Image()
@@ -522,7 +522,7 @@ function handleModelSelectChange(e) {
     selectedModel.value = newModelId
     return
   }
-  const promptPref = localStorage.getItem('purecut_prompt_model_change')
+  const promptPref = localStorage.getItem(STORAGE_KEYS.promptModelChange)
   const shouldPrompt = promptPref === null ? true : promptPref === 'true'
   if (!shouldPrompt) {
     selectedModel.value = newModelId
@@ -538,7 +538,7 @@ function handleModelSelectChange(e) {
 }
 function confirmModelRerun() {
   if (dontAskModelChangeAgain.value) {
-    localStorage.setItem('purecut_prompt_model_change', 'false')
+    localStorage.setItem(STORAGE_KEYS.promptModelChange, 'false')
   }
   if (pendingModelId.value) {
     selectedModel.value = pendingModelId.value
@@ -549,7 +549,7 @@ function confirmModelRerun() {
 }
 function cancelModelRerun() {
   if (dontAskModelChangeAgain.value) {
-    localStorage.setItem('purecut_prompt_model_change', 'false')
+    localStorage.setItem(STORAGE_KEYS.promptModelChange, 'false')
   }
   showModelChangePrompt.value = false
   pendingModelId.value = null

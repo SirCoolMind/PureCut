@@ -19,6 +19,12 @@ server, no API, and no backend — images never leave the device.
 | Preview the built output | `npm run preview` |
 | Report AI context cost per file | `npm run context:report` |
 | Enforce the file-size budget | `npm run context:check` |
+| Type-check the source | `npm run typecheck` |
+
+TypeScript is pinned to **5.x on purpose.** `vue-tsc` resolves
+`typescript/lib/tsc`, which TypeScript 7 removed from its `exports` map, so
+upgrading TS breaks `npm run typecheck` with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+Do not bump TypeScript past 5 until vue-tsc supports TS 7.
 
 There is currently **no test runner wired to npm.** Playwright is installed as a
 devDependency, but the ad-hoc scripts in the repo root are not integrated and
@@ -34,9 +40,12 @@ are mid-migration into `tests/`. Do not assume they pass.
 | `src/constants.js` | `appVersion`, `modelOptions`, `changelog`, `roadmap`. |
 | `src/components/*.vue` | Three lazy-loaded modals (Info / Settings / Showcase). Dumb props + emits. |
 
-> **Note:** a `src/core/` (pure, testable) and `src/composables/` (state + logic)
-> layer is planned. When it lands, prefer those files over `App.vue` and update
-> this table.
+| `src/core/*.ts` | Framework-free modules: no Vue, no DOM side effects. Must be unit-testable in isolation. Currently `storageKeys.ts`. |
+
+> **Note:** `src/core/` is the start of a framework-free layer. A
+> `src/composables/` layer (state + logic per domain) is still planned. Prefer
+> those files over `App.vue` once they exist, and update this table as the
+> module list grows.
 
 **Data flow:** `processImage(file)` → `runTransformersModel()` returns a mask
 blob → the mask is drawn into an offscreen canvas → brush/selection tools mutate
