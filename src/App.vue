@@ -41,7 +41,7 @@ import {
   Type
 } from 'lucide-vue-next'
 import { appVersion, modelOptions } from './constants.js'
-import { detectSubjects, magicWandFloodFill, extractMaskContourSegments } from './detectionEngine.js'
+import { detectSubjects, magicWandFloodFill } from './detectionEngine.js'
 import { STORAGE_KEYS, cachedModelKey } from './core/storageKeys.js'
 // Canvas handles are live module bindings, not refs - see src/core/canvasStore.ts.
 // They are read directly (keeping the old call sites intact) and replaced through
@@ -63,6 +63,8 @@ import { useZoomPan } from './composables/useZoomPan.js'
 import { useTelemetry } from './composables/useTelemetry.js'
 import { useUndoRedo } from './composables/useUndoRedo.js'
 import { useImageInput } from './composables/useImageInput.js'
+import { useOutlineOverlay } from './composables/useOutlineOverlay.js'
+import { useSubjects } from './composables/useSubjects.js'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -122,11 +124,6 @@ const wandTolerance = ref(25)
 let antsAnimationId = null
 let antsDashOffset = 0
 
-// Detection State (Category & Subjects)
-const detectedSubjects = ref([])
-const showOutline = ref(false)
-const showSubjectsDrawer = ref(false)
-
 // Zoom & pan for the viewport. See useZoomPan.
 
 const {
@@ -172,6 +169,15 @@ const {
   onPaste,
   copyToClipboard
 } = useImageInput({ originalUrl, resultBlob, copied, processImage })
+
+// Detected subjects + the drawer that hides/erases them. See useSubjects.
+// processImage() seeds detectedSubjects and may auto-open the drawer.
+const { detectedSubjects, showSubjectsDrawer, toggleSubjectVisibility, eraseSubject, refreshDetectionData } =
+  useSubjects({ saveUndoState, recompositeCanvas })
+
+// The animated contour outline is currently inert - nothing calls toggleOutline(),
+// so showOutline is only ever read (by the template). See AGENTS.md known issues.
+const { showOutline } = useOutlineOverlay({ imageDimensions, zoomLevel })
 
 // Tuning Parameters
 const tuning = reactive({
@@ -643,118 +649,11 @@ function recompositeCanvas(immediateBlob = false) {
   }
 }
 
-// Global Outline Rendering Engine
-let globalOutlineAnimationId = null
-let outlineDashOffset = 0
+// The contour-outline renderer now lives in src/composables/useOutlineOverlay.ts
 
-function toggleOutline() {
-  showOutline.value = !showOutline.value
-  if (showOutline.value) {
-    updateOutlineOverlay()
-  } else {
-    stopOutlineAnimation()
-  }
-}
-
-function updateOutlineOverlay(sourceMask = maskCanvas) {
-  if (!sourceMask || !showOutline.value) return
-  const segments = extractMaskContourSegments(sourceMask)
-  
-  if (globalOutlineAnimationId) cancelAnimationFrame(globalOutlineAnimationId)
-  
-  const canvas = document.getElementById('outlineCanvas')
-  if (!canvas) return
-  canvas.width = imageDimensions.width
-  canvas.height = imageDimensions.height
-  const ctx = canvas.getContext('2d')
-  
-  const loop = () => {
-    if (!showOutline.value) {
-      stopOutlineAnimation()
-      return
-    }
-    outlineDashOffset = (outlineDashOffset - 0.5) % 100
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    
-    ctx.lineCap = 'round'
-    ctx.lineWidth = Math.max(1.5, Math.round(2 / zoomLevel.value))
-    
-    ctx.beginPath()
-    for (const seg of segments) {
-      ctx.moveTo(seg.x1, seg.y)
-      ctx.lineTo(seg.x2, seg.y)
-    }
-    
-    // Black base
-    ctx.strokeStyle = 'rgba(0,0,0,0.85)'
-    ctx.setLineDash([])
-    ctx.stroke()
-    
-    // White animated dash
-    ctx.strokeStyle = 'rgba(255,255,255,0.95)'
-    const dashLen = Math.max(3, Math.round(5 / zoomLevel.value))
-    ctx.setLineDash([dashLen, dashLen])
-    ctx.lineDashOffset = outlineDashOffset
-    ctx.stroke()
-    
-    globalOutlineAnimationId = requestAnimationFrame(loop)
-  }
-  
-  loop()
-}
-
-function stopOutlineAnimation() {
-  if (globalOutlineAnimationId) {
-    cancelAnimationFrame(globalOutlineAnimationId)
-    globalOutlineAnimationId = null
-  }
-  const canvas = document.getElementById('outlineCanvas')
-  if (canvas) {
-    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
-  }
-}
-
-function toggleSubjectVisibility(subject, forceErase = false) {
-  if (forceErase) {
-    subject.visible = false
-  } else {
-    subject.visible = !subject.visible
-  }
-
-  // Restore if turning on, erase if turning off
-  const action = subject.visible ? 'restore' : 'erase'
-  
-  if (maskCtx) {
-    maskCtx.save()
-    maskCtx.beginPath()
-    maskCtx.rect(subject.x, subject.y, subject.width, subject.height)
-    maskCtx.clip()
-    
-    if (action === 'erase') {
-      maskCtx.globalCompositeOperation = 'destination-out'
-      maskCtx.fillStyle = 'rgba(0, 0, 0, 1)'
-    } else {
-      maskCtx.globalCompositeOperation = 'source-over'
-      maskCtx.fillStyle = 'rgba(255, 255, 255, 1)'
-    }
-    
-    // Draw only the exact alpha mask belonging to this connected component? 
-    // Wait, we don't have the exact mask of just this component mapped back.
-    // We'll fill the bounding box. It's a rough bounding box erase.
-    // For a perfect erase, we should really use the pixel binary mask. But filling the rect works for isolated islands.
-    maskCtx.fill()
-    maskCtx.restore()
-    
-    saveUndoState()
-    recompositeCanvas(true)
-  }
-}
-
-function eraseSubject(subject) {
-  toggleSubjectVisibility(subject, true)
-  // and remove it from array
-  detectedSubjects.value = detectedSubjects.value.filter(s => s.id !== subject.id)
-}
+// Subject visibility / erase now live in src/composables/useSubjects.ts.
+// Known bug moved verbatim with it: erasing clips to the bounding box, so
+// overlapping neighbours lose pixels too.
 
 // Undo / redo / reset-to-raw-AI-mask now live in src/composables/useUndoRedo.ts.
 // saveUndoState() is called from the brush, selection and subject tools below.
@@ -1220,13 +1119,6 @@ function applySelectionAction(action) {
   recompositeCanvas(true)
   refreshDetectionData()
   clearSelection()
-}
-
-// Refresh subjects and outline after manual mask edits (brush/selection)
-function refreshDetectionData() {
-  if (showSubjectsDrawer.value && maskCanvas && originalCanvas) {
-    detectedSubjects.value = detectSubjects(maskCanvas, originalCanvas)
-  }
 }
 
 // Image intake (picker / drop / paste / copy) and the replace-image prompt now

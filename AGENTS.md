@@ -39,7 +39,7 @@ are mid-migration into `tests/`. Do not assume they pass.
 | `src/detectionEngine.js` | Pure pixel analysis: connected-component subject detection, magic-wand flood fill, mask contour extraction. No Vue, no DOM. |
 | `src/constants.js` | `appVersion`, `modelOptions`, `changelog`, `roadmap`. |
 | `src/components/*.vue` | Three lazy-loaded modals (Info / Settings / Showcase). Dumb props + emits. |
-| `src/composables/*.ts` | `setup()`-scope state and behaviour, one concern per composable. Dependencies arrive as refs/callbacks rather than imports, so each module's signature is its whole contract. Currently `useDisplayScale`, `useWorkspaceUi`, `useZoomPan`, `useTelemetry`. |
+| `src/composables/*.ts` | `setup()`-scope state and behaviour, one concern per composable. Dependencies arrive as refs/callbacks rather than imports, so each module's signature is its whole contract. Currently `useDisplayScale`, `useWorkspaceUi`, `useZoomPan`, `useTelemetry`, `useUndoRedo`, `useImageInput`, `useOutlineOverlay`, `useSubjects`. |
 | `src/core/*.ts` | Framework-free modules: no Vue, no DOM side effects. Must be unit-testable in isolation. Currently `storageKeys.ts` and `canvasStore.ts`. |
 
 > **Note:** the refactor moves code out of `App.vue` into `src/composables/`
@@ -56,10 +56,12 @@ that mask canvas in place → `recompositeCanvas()` applies threshold / trim /
 de-fringe and exports a PNG blob → undo snapshots and subject detection both
 branch off the same mask canvas.
 
-## Where to edit what (current `src/App.vue` line ranges)
+## Where to edit what (`src/App.vue` line ranges — STALE, verify first)
 
-These ranges are valid **only while `App.vue` is still monolithic.** They are
-replaced by real file paths as the refactor progresses — delete rows as you go.
+These ranges were taken from the 4404-line pre-refactor `App.vue` and were **not**
+kept in sync as composables moved out, so most numbers below are now wrong. Treat
+the table as an index of what exists, and confirm any line number with a search
+before relying on it. Rows are deleted as each concern gets a real file path.
 
 | Concern | Lines | Key symbols |
 | --- | --- | --- |
@@ -160,3 +162,9 @@ Styles: global `<style>` 2417–2829 · `<style scoped>` 2831–4403.
    (it appears only as a display string in `InfoModal.vue`).
 6. `SettingsModal.vue` writes `localStorage` directly, bypassing `App.vue`.
 7. `App.vue` contains no `@media` queries — there is no responsive layout.
+8. The contour-outline overlay is unreachable. `showOutline` is only ever written
+   by `toggleOutline()`, and nothing calls `toggleOutline` — not the template, not
+   `onKeyDown`. So the `#outlineCanvas` layer never becomes visible and
+   `updateOutlineOverlay` / `stopOutlineAnimation` never run. Found while
+   extracting `useOutlineOverlay.ts`; the code was moved verbatim rather than
+   deleted, because dropping a feature is a product decision.
