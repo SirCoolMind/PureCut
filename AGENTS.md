@@ -116,11 +116,15 @@ still a rule).
    `ref()` — the resulting Proxy breaks `getImageData`/`putImageData` identity
    and destroys performance. Use `shallowRef` or plain module state.
 
-2. **`localStorage` keys are magic strings, duplicated in four files.**
-   `purecut_hf_token`, `purecut_font_size`, `purecut_cached_<modelId>`,
-   `purecut_prompt_model_change`. They appear in `App.vue`, `SettingsModal.vue`,
-   `aiEngine.js`, and `index.html`. `index.html` cannot import a module, so its
-   copy of `purecut_font_size` must stay duplicated — do not "fix" it.
+2. **The `localStorage` key strings live in `core/storageKeys.ts`.** They used to
+   be magic strings repeated in four files; that is fixed, so **import
+   `STORAGE_KEYS` rather than typing a literal**: `purecut_hf_token`,
+   `purecut_font_size`, `purecut_cached_<modelId>`, `purecut_prompt_model_change`.
+   The one copy that must stay duplicated is in `index.html`, which runs before
+   any module loads and so cannot import — do not "fix" it. Note the reads and
+   writes are still split across `App.vue`, `SettingsModal.vue`, `aiEngine.js`
+   and `useModelCache.ts`; that is a separate, harmless shape (see known issue 4),
+   but the key names themselves have a single source of truth.
 
 3. **COOP/COEP headers are load-bearing.** `vite.config.js` sets
    `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy`, and
@@ -168,7 +172,9 @@ still a rule).
 1. `toggleSubjectVisibility` / `eraseSubject` erase a **bounding box**, not the
    per-component mask pixels, so erasing one subject also wipes overlapping
    pixels of its neighbours. The code comment acknowledges this.
-2. `ShowcaseModal.vue` emits `open-in-studio` but nothing listens for it.
+2. `ShowcaseModal.vue` no longer declares `open-in-studio` - it was declared and
+   never emitted, and was removed rather than wired up. The feature it hinted at
+   (jumping from a showcase cutout into the studio) is still unimplemented.
 3. `@imgly/background-removal` is declared as a dependency but never imported   (it appears only as a display string in `InfoModal.vue`).
 4. `SettingsModal.vue` writes `localStorage` directly, bypassing `App.vue`.
 5. `App.vue` contains no `@media` queries — there is no responsive layout.

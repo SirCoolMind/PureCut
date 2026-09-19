@@ -18,7 +18,12 @@ import ShowcaseSliderStage from './ShowcaseSliderStage.vue'
 import ShowcaseDiagnosis from './ShowcaseDiagnosis.vue'
 import ShowcaseGallery from './ShowcaseGallery.vue'
 
-const emit = defineEmits(['back', 'open-in-studio'])
+// `open-in-studio` was declared here and never emitted - no `emit('open-in-studio')`
+// call ever existed, so removing it cannot change behaviour. It is gone because
+// the declaration misled readers into thinking a caller existed. The intent (jump
+// from a showcase cutout into the studio) is still unimplemented; if it is built,
+// declare the event then, together with the listener.
+const emit = defineEmits(['back'])
 
 const baseUrl = import.meta.env.BASE_URL || './'
 
