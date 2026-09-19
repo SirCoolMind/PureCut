@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch, defineAsyncComponent } from 'vue'
-import { runTransformersModel, preloadTransformersModel, resetLoadedModels } from './aiEngine.js'
+import { runTransformersModel, preloadTransformersModel } from './aiEngine.js'
 import {
   UploadCloud,
   Sparkles,
@@ -43,6 +43,7 @@ import {
 import { appVersion, modelOptions } from './constants.js'
 import { detectSubjects } from './detectionEngine.js'
 import { STORAGE_KEYS, cachedModelKey } from './core/storageKeys.js'
+import { formatBytes } from './core/format.js'
 // Canvas handles are live module bindings, not refs - see src/core/canvasStore.ts.
 // They are read directly (keeping the old call sites intact) and replaced through
 // the setters, because ES modules forbid assigning to an imported binding.
@@ -69,6 +70,7 @@ import { useBrush } from './composables/useBrush.js'
 import { useSelectionOverlay } from './composables/useSelectionOverlay.js'
 import { useSelectionTools } from './composables/useSelectionTools.js'
 import { useCompositor } from './composables/useCompositor.js'
+import { useModelCache } from './composables/useModelCache.js'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -99,12 +101,18 @@ const { telemetry } = useTelemetry()
 
 const selectedModel = ref('briaai/RMBG-1.4')
 const selectedDevice = ref('gpu') // 'gpu' | 'cpu'
-const cachedModels = reactive(
-  modelOptions.reduce((acc, m) => {
-    acc[m.id] = false;
-    return acc;
-  }, {})
-)
+
+// Model cache state + the "clear cached models" flow. See useModelCache.
+// cachedModels is flipped in place by processImage/handlePreload below.
+const {
+  cachedModels,
+  isClearingCache,
+  checkModelCacheStatus,
+  formattedCacheUsage,
+  clearAllCache,
+  currentModelCached,
+  currentModelMeta
+} = useModelCache({ statusMessage, selectedModel })
 
 const showSettingsModal = ref(false)
 
@@ -230,88 +238,8 @@ const showModelChangePrompt = ref(false)
 const pendingModelId = ref(null)
 const dontAskModelChangeAgain = ref(false)
 
-const cacheUsageBytes = ref(0)
-const isClearingCache = ref(false)
-
-async function checkModelCacheStatus() {
-  modelOptions.forEach(m => {
-    const isCached = localStorage.getItem(cachedModelKey(m.id)) === 'true'
-    cachedModels[m.id] = isCached
-  })
-
-  // Measure actual browser storage usage if supported
-  if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate) {
-    try {
-      const estimate = await navigator.storage.estimate()
-      cacheUsageBytes.value = estimate.usage || 0
-    } catch (e) {
-      console.warn('Storage estimate failed:', e)
-    }
-  }
-}
-
-const formattedCacheUsage = computed(() => {
-  if (!cacheUsageBytes.value || cacheUsageBytes.value < 50000) { // Ignore < 50KB overhead
-    const anyCached = Object.values(cachedModels).some(v => v)
-    return anyCached ? '~45 MB' : '0 MB'
-  }
-  return formatBytes(cacheUsageBytes.value)
-})
-
-async function clearAllCache() {
-  if (isClearingCache.value) return
-  const confirmClear = window.confirm('Are you sure you want to clear all downloaded AI models and cached storage? You can re-download them anytime.')
-  if (!confirmClear) return
-
-  isClearingCache.value = true
-  try {
-    // 1. Reset in-memory instances
-    resetLoadedModels()
-
-    // 2. Clear Cache Storage API
-    if (typeof window !== 'undefined' && 'caches' in window) {
-      const cacheNames = await caches.keys()
-      await Promise.all(cacheNames.map(name => caches.delete(name)))
-    }
-
-    // 3. Clear IndexedDB databases used by Transformers.js / ONNX
-    if (typeof window !== 'undefined' && window.indexedDB && window.indexedDB.databases) {
-      try {
-        const dbs = await window.indexedDB.databases()
-        for (const db of dbs) {
-          if (db.name) {
-            window.indexedDB.deleteDatabase(db.name)
-          }
-        }
-      } catch (err) {
-        console.warn('Could not enumerate IndexedDB databases:', err)
-      }
-    }
-
-    // 4. Clear model cache flags in localStorage
-    modelOptions.forEach(m => {
-      localStorage.removeItem(cachedModelKey(m.id))
-      cachedModels[m.id] = false
-    })
-
-    // 5. Update cache size
-    cacheUsageBytes.value = 0
-    await checkModelCacheStatus()
-
-    statusMessage.value = 'Model cache cleared successfully.'
-    setTimeout(() => {
-      if (statusMessage.value === 'Model cache cleared successfully.') statusMessage.value = ''
-    }, 2500)
-  } catch (err) {
-    console.error('Failed to clear cache:', err)
-    alert('An error occurred while clearing cache: ' + (err.message || err))
-  } finally {
-    isClearingCache.value = false
-  }
-}
-
-const currentModelCached = computed(() => !!cachedModels[selectedModel.value])
-const currentModelMeta = computed(() => modelOptions.find(m => m.id === selectedModel.value) || modelOptions[0])
+// Model cache status, storage-size reporting and clearing now live in
+// src/composables/useModelCache.ts.
 
 // Preload handler
 async function handlePreload() {
@@ -342,15 +270,8 @@ async function handlePreload() {
   }
 }
 
-// Preset handling (`applyPreset`) now lives in src/composables/useCompositor.ts.
-
-function formatBytes(bytes, decimals = 1) {
-  if (!bytes) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i]
-}
+// Preset handling (`applyPreset`) lives in src/composables/useCompositor.ts, and
+// formatBytes in src/core/format.ts (imported above).
 
 // Main AI Processing Function
 async function processImage(file) {
