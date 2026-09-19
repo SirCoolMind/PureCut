@@ -333,6 +333,54 @@ async function main() {
         skip('brush stroke re-encoded the cutout', 'no cutout to paint on (model weights unavailable)')
       }
 
+      // ------------------------------------------------- selection + erase
+      // A magic-wand click is the only selection path that starts the
+      // marching-ants loop, so it is also the only path that exercises the
+      // selection canvas. "Erase Region" then mutates the mask through a third
+      // code path (applySelectionAction). Neither was clicked before.
+      if (hasResult) {
+        console.log('\nSelection tools (magic wand + erase region)')
+        await selectTool(page, 'select')
+        await page.locator('.select-toolbar .b-pill:has-text("Magic Wand")').first().click()
+        await page.waitForTimeout(300)
+        const selSurface = page.locator('.selection-interaction-surface')
+        const selBox = await selSurface.boundingBox()
+        if (selBox) {
+          await page.mouse.click(selBox.x + selBox.width * 0.5, selBox.y + selBox.height * 0.45)
+        } else {
+          check('selection surface has a layout box', false, 'no bounding box')
+        }
+        await page.waitForTimeout(900)
+        check(
+          'wand click created a selection',
+          (await page.locator('.selection-actions-group').count()) > 0,
+          'no selection action buttons appeared'
+        )
+        // The ants loop sizes this canvas to the image on its first frame. An
+        // untouched canvas keeps the browser's 300x150 default, which means
+        // neither the animation loop nor the canvas ref is doing its job.
+        const antsSize = await page.locator('.selection-overlay-canvas').evaluate((el) => `${el.width}x${el.height}`)
+        check('marching-ants canvas sized to the image', antsSize !== '300x150', `canvas was ${antsSize}`)
+        await shoot(page, '08b-wand-selection')
+
+        const srcBeforeErase = await page.locator('.result-img').getAttribute('src')
+        const eraseBtn = page.locator('.btn-sel-action.erase-btn')
+        if (await eraseBtn.count()) {
+          await eraseBtn.click()
+          await page.waitForTimeout(1500)
+          check('erase region cleared the selection', (await page.locator('.selection-actions-group').count()) === 0)
+          check(
+            'erase region re-encoded the cutout',
+            (await page.locator('.result-img').getAttribute('src')) !== srcBeforeErase,
+            'result src unchanged'
+          )
+        }
+      } else {
+        skip('wand click created a selection', 'no cutout to select on (model weights unavailable)')
+        skip('marching-ants canvas sized to the image', 'no cutout to select on (model weights unavailable)')
+        skip('erase region re-encoded the cutout', 'no cutout to select on (model weights unavailable)')
+      }
+
       // Power user sliders
       console.log('\nSidebar / power user mode')
       await page.locator('.mode-btn:has-text("Power User")').click()
