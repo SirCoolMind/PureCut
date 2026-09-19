@@ -17,6 +17,7 @@ import { useSelectionOverlay } from './composables/useSelectionOverlay.js'
 import { useSelectionTools } from './composables/useSelectionTools.js'
 import { useCompositor } from './composables/useCompositor.js'
 import { useModelCache } from './composables/useModelCache.js'
+import { useKeyboardShortcuts } from './composables/useKeyboardShortcuts.js'
 import { useProcessing } from './composables/useProcessing.js'
 import ProcessingOverlay from './components/ProcessingOverlay.vue'
 import UploadHero from './components/UploadHero.vue'
@@ -246,6 +247,19 @@ const { onSelectPointerDown, onSelectPointerMove, onSelectPointerUp, clearSelect
     wandTolerance
   })
 
+// Global keyboard shortcuts (undo/redo, and the selection editing keys).
+// See useKeyboardShortcuts - the listener itself is registered in onMounted.
+const { onKeyDown } = useKeyboardShortcuts({
+  handleUndo,
+  handleRedo,
+  activeTool,
+  hasSelection,
+  applySelectionAction,
+  clearSelection,
+  isSelecting,
+  selectShape
+})
+
 // Modal State
 const showInfoModal = ref(false)
 
@@ -288,40 +302,6 @@ function reset() {
   statusMessage.value = ''
   undoHistory.value = []
   redoHistory.value = []
-}
-
-function onKeyDown(e) {
-  // Undo/Redo: Ctrl + Z, Ctrl + Shift + Z, Ctrl + Y
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-    e.preventDefault()
-    if (e.shiftKey) {
-      handleRedo()
-    } else {
-      handleUndo()
-    }
-    return
-  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
-    e.preventDefault()
-    handleRedo()
-    return
-  }
-
-  // If user has a selection active, support Delete/Backspace to erase, Enter to restore, Esc to clear
-  if (activeTool.value === 'select' && hasSelection.value) {
-    if (e.key === 'Delete' || e.key === 'Backspace') {
-      e.preventDefault()
-      applySelectionAction('erase')
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      applySelectionAction('restore')
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      clearSelection()
-    }
-  } else if (activeTool.value === 'select' && isSelecting.value && selectShape.value === 'polygon' && e.key === 'Escape') {
-    e.preventDefault()
-    clearSelection()
-  }
 }
 
 // When switching modes, initialize preview or manage selection state

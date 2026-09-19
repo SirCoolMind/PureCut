@@ -31,9 +31,9 @@ Do not bump TypeScript past 5 until vue-tsc supports TS 7.
 `npm run test:regression` is the structural safety net: a Playwright suite
 (`tests/e2e/regression.mjs`, 66 lines of orchestration over `tests/e2e/checks/*`)
 that needs the dev server on :5173 and clicks through the whole app, including
-inference. Run it before and after any structural change. It catches a lost
-element or a dead handler, but **not** lost styling, so pair it with a visual
-check whenever markup moves between files. For styling there is
+inference, in **66 checks**. Run it before and after any structural change. It
+catches a lost element or a dead handler, but **not** lost styling, so pair it
+with a visual check whenever markup moves between files. For styling there is
 `scripts/css-parity.mjs` (see below), which is the only guard against a rule
 that silently stopped matching.
 
@@ -41,12 +41,12 @@ that silently stopped matching.
 
 | Module | Role |
 | --- | --- |
-| `src/App.vue` | The application shell: the composable wiring block, the four function refs, `getCanvasCoords`, `reset`, `onKeyDown` and the lifecycle hooks, plus the template that composes the components below. **552 lines** (script 360, template 184) — down from 4404. |
+| `src/App.vue` | The application shell: the composable wiring block, the four function refs, `getCanvasCoords`, `reset` and the lifecycle hooks, plus the template that composes the components below. **531 lines** (script 339, template 184) — down from 4404. |
 | `src/aiEngine.js` | Transformers.js wrapper. Model loading, device selection (WebGPU vs WASM), and the WebGPU→WASM fallback. |
 | `src/detectionEngine.js` | Pure pixel analysis: connected-component subject detection, magic-wand flood fill, mask contour extraction. No Vue, no DOM. |
 | `src/constants.js` | `appVersion`, `modelOptions`, `changelog`, `roadmap`. |
 | `src/components/*.vue` | The view layer, one concern per file: `Navbar`, `ModelStatusBar`, `UploadHero`, `ProcessingOverlay`, `StageHeader`, `CanvasViewport`, `StageFooter`, `TuningSidebar`, `SubjectsDrawer`, `ZoomToolbar`, `ModelChangePrompt`, `ReplaceImagePrompt`, plus the three lazy-loaded modals (Info / Settings / Showcase) and their sub-components: `ShowcaseSliderStage`, `ShowcaseDiagnosis`, `ShowcaseGallery`, `InfoChangelogTab`, `InfoRoadmapTab`, `InfoAboutTab`, `InfoStorageTab`. Dumb props + emits; all state stays in `App.vue`. |
-| `src/composables/*.ts` | `setup()`-scope state and behaviour, one concern per composable. Dependencies arrive as refs/callbacks rather than imports, so each module's signature is its whole contract: `useDisplayScale`, `useWorkspaceUi`, `useZoomPan`, `useTelemetry`, `useUndoRedo`, `useImageInput`, `useOutlineOverlay`, `useSubjects`, `useBrush`, `useSelectionOverlay`, `useSelectionTools`, `useCompositor`, `useModelCache`, `useProcessing`. |
+| `src/composables/*.ts` | `setup()`-scope state and behaviour, one concern per composable. Dependencies arrive as refs/callbacks rather than imports, so each module's signature is its whole contract: `useDisplayScale`, `useWorkspaceUi`, `useZoomPan`, `useTelemetry`, `useUndoRedo`, `useImageInput`, `useOutlineOverlay`, `useSubjects`, `useBrush`, `useSelectionOverlay`, `useSelectionTools`, `useCompositor`, `useModelCache`, `useKeyboardShortcuts`, `useProcessing`. |
 | `src/core/*.ts` | Framework-free modules: no Vue, no DOM side effects. Must be unit-testable in isolation. Currently `storageKeys.ts`, `canvasStore.ts`, `format.ts`, `geometry.ts`, `maskOps.ts`. |
 | `scripts/context-report.mjs` | The size budget tool: per-file lines/tokens, plus a per-block breakdown for oversized `.vue` files. |
 | `scripts/css-parity.mjs` | Normalises the CSS of a build into a sorted set of `selector | declaration` lines and diffs two snapshots. The only guard against a rule that silently stopped matching. |
@@ -87,6 +87,7 @@ are presentational and talk back through emits only.
 | Subject detection, flood fill, contour extraction | `detectionEngine.js` |
 | Fast GPU preview vs full-quality export | `composables/useCompositor.ts` |
 | Mask history (undo/redo/reset) | `composables/useUndoRedo.ts` |
+| Global keyboard shortcuts (undo/redo, selection keys) | `composables/useKeyboardShortcuts.ts` |
 | Canvas handles (live module bindings) | `core/canvasStore.ts` |
 | `localStorage` key names | `core/storageKeys.ts` |
 | Pointer event → image pixel mapping | `toImageCoords` in `core/geometry.ts` (injected into the tool composables as `getCanvasCoords`) |

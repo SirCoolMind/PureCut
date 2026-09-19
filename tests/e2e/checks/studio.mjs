@@ -60,6 +60,7 @@ export async function checkStudio(h) {
     await checkBackdrops(h)
 
     await checkMaskMutation(h, hasResult)
+    await checkKeyboardShortcuts(h, hasResult)
     await checkSelectionTools(h, hasResult)
 
     if (!hasResult) return
@@ -191,6 +192,48 @@ export async function checkMaskMutation(h, hasResult) {
   }
 }
 
+export async function checkKeyboardShortcuts(h, hasResult) {
+  const { page, check } = h
+  // --------------------------------------------- keyboard shortcuts (undo/redo)
+  // `useKeyboardShortcuts` is the only way to reach redo: there is no Redo
+  // button in the UI (`StageFooter` renders Undo only, and the sidecar toolbars
+  // have none), so a broken Ctrl+Shift+Z would be invisible to every other
+  // check. Undo is the observable proxy - its disabled state tracks
+  // `undoHistory.length <= 1`.
+  //
+  // This runs immediately after checkMaskMutation on purpose: the brush stroke
+  // it just made is what gives us a history entry to move through. A Ctrl+Z
+  // here pops back to the pristine mask, which disables Undo again.
+  if (hasResult) {
+    console.log('\nKeyboard shortcuts (undo / redo)')
+    // The Undo button only exists in Magic Brush mode, and checkMaskMutation
+    // leaves the slider tool selected, so go back to the brush first.
+    await selectTool(page, 'brush')
+    const undoBtn = page.locator('.btn-mini:has-text("Undo")').first()
+    check('Undo is available after the stroke', !(await undoBtn.isDisabled()), 'Undo disabled before Ctrl+Z')
+
+    await page.keyboard.press('Control+z')
+    await page.waitForTimeout(1200)
+    check('Ctrl+Z undoes the stroke', await undoBtn.isDisabled(), 'Undo still enabled after Ctrl+Z (history did not move)')
+
+    await page.keyboard.press('Control+Shift+z')
+    await page.waitForTimeout(1200)
+    check('Ctrl+Shift+Z redoes the stroke', !(await undoBtn.isDisabled()), 'Undo still disabled - redo did not restore the entry')
+
+    // Ctrl+Y is the second redo binding. Undo first so its effect is observable
+    // rather than a no-op on an already-empty redo stack.
+    await page.keyboard.press('Control+z')
+    await page.waitForTimeout(1200)
+    await page.keyboard.press('Control+y')
+    await page.waitForTimeout(1200)
+    check('Ctrl+Y is accepted as redo', !(await undoBtn.isDisabled()), 'undo history empty after Ctrl+Y')
+  } else {
+    skip('Ctrl+Z undoes the stroke', 'no cutout to undo on (model weights unavailable)')
+    skip('Ctrl+Shift+Z redoes the stroke', 'no cutout to redo on (model weights unavailable)')
+    skip('Ctrl+Y is accepted as redo', 'no cutout to redo on (model weights unavailable)')
+  }
+}
+
 export async function checkSelectionTools(h, hasResult) {
   const { page, check, checkVisible, shoot } = h
   // ------------------------------------------------- selection + erase
@@ -223,6 +266,17 @@ export async function checkSelectionTools(h, hasResult) {
     check('marching-ants canvas sized to the image', antsSize !== '300x150', `canvas was ${antsSize}`)
     await shoot(page, '08b-wand-selection')
 
+    // The other half of useKeyboardShortcuts: Escape must drop the selection.
+    // There is no "dismiss selection" button, so this key is the only affordance.
+    // Done before the erase click so the erase path below still gets a selection.
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(600)
+    check('Escape cleared the selection', (await page.locator('.selection-actions-group').count()) === 0, 'selection actions still visible after Escape')
+
+    // Re-select, so the erase-region path below still has something to act on.
+    await page.mouse.click(selBox.x + selBox.width * 0.5, selBox.y + selBox.height * 0.45)
+    await page.waitForTimeout(900)
+
     const srcBeforeErase = await page.locator('.result-img').getAttribute('src')
     const eraseBtn = page.locator('.btn-sel-action.erase-btn')
     if (await eraseBtn.count()) {
@@ -238,6 +292,8 @@ export async function checkSelectionTools(h, hasResult) {
   } else {
     skip('wand click created a selection', 'no cutout to select on (model weights unavailable)')
     skip('marching-ants canvas sized to the image', 'no cutout to select on (model weights unavailable)')
+    skip('Escape cleared the selection', 'no cutout to select on (model weights unavailable)')
+    skip('erase region re-encoded the cutout', 'no cutout to select on (model weights unavailable)')
     skip('erase region re-encoded the cutout', 'no cutout to select on (model weights unavailable)')
   }
 }
