@@ -290,6 +290,7 @@ function handleBrushLeave(e) {
       <template v-else-if="activeTool === 'brush'">
         <div
           ref="brushSurfaceRef"
+          data-image-surface
           class="brush-interaction-surface"
           :style="imageBoxStyle"
           @pointerdown="handleBrushDown"
@@ -302,10 +303,15 @@ function handleBrushLeave(e) {
         </div>
       </template>
 
-      <!-- MODE 3: Dotted Marquee Selection Interactive Layer -->
+      <!-- MODE 3: Dotted Marquee Selection Interactive Layer.
+           Pinned to the image box for the same reason as the brush surface, and
+           because the marching-ants canvas below is: the pointer has to be mapped
+           against the same rectangle the ants are drawn in. -->
       <template v-else-if="activeTool === 'select'">
         <div
+          data-image-surface
           class="selection-interaction-surface"
+          :style="imageBoxStyle"
           @pointerdown="$emit('select-down', $event)"
           @pointermove="$emit('select-move', $event)"
           @pointerup="$emit('select-up', $event)"
@@ -313,18 +319,23 @@ function handleBrushLeave(e) {
         ></div>
       </template>
 
-      <!-- Dotted Marching Ants Selection Overlay Canvas (always rendered on top when selection is active) -->
+      <!-- Dotted Marching Ants Selection Overlay Canvas (always rendered on top when selection is active).
+           Also pinned to the image box: a <canvas> ignores the `object-fit:
+           contain` it inherits from `.viewport-img` and would otherwise stretch to
+           fill the viewport, drawing the ants distorted and away from the image. -->
       <canvas
         :ref="setSelectionCanvas"
         class="viewport-img selection-overlay-canvas"
-        :style="{ display: (activeTool === 'select' && (hasSelection || isSelecting)) ? 'block' : 'none' }"
+        :style="[imageBoxStyle, { display: (activeTool === 'select' && (hasSelection || isSelecting)) ? 'block' : 'none' }]"
       ></canvas>
 
-      <!-- Global Cutout Marching Ants Outline Canvas -->
+      <!-- Global Cutout Marching Ants Outline Canvas. Inert today (see the header
+           note) but pinned for the same reason, so enabling it cannot reintroduce
+           the stretched-canvas bug. -->
       <canvas
         id="outlineCanvas"
         class="viewport-img outline-overlay-canvas"
-        :style="{ display: showOutline ? 'block' : 'none' }"
+        :style="[imageBoxStyle, { display: showOutline ? 'block' : 'none' }]"
       ></canvas>
     </div>
 

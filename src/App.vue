@@ -281,22 +281,22 @@ const showInfoModal = ref(false)
 // be unit-tested without a DOM; this adapter only reads the live viewport box and
 // the current view state.
 //
-// The brush takes a shortcut that the selection tools cannot: the brush surface IS
-// the image box (CanvasViewport pins it there), so the pointer can be mapped
-// straight against that element's own rectangle. That is deliberately the SAME
-// rectangle the cursor guide is positioned in, which makes "the ring is drawn where
-// the stroke lands" true by construction rather than by two independent
-// calculations that happen to agree. It also means a stale measured viewport size
-// can never desynchronise the ring from the paint.
+// Both the brush and the selection tools hit `[data-image-surface]` layers, which
+// CanvasViewport pins to the image's rendered box. So the pointer can be mapped
+// straight against that element's own rectangle - deliberately the SAME rectangle
+// the visible layer (preview canvas, marching-ants canvas, cursor ring) is drawn
+// in, which makes "what you see is where it acts" true by construction rather than
+// by two independent calculations that happen to agree. It also means a stale
+// measured viewport size can never desynchronise the two.
 //
-// Everything else (selection marquee, wand, lasso) works on a full-viewport surface
-// and still needs the letterbox maths, which is derived from the viewport's CONTENT
-// box - `getBoundingClientRect()` includes the 1px border, while the transform layer
-// is `inset: 0` inside it.
+// `toImageCoords` remains the fallback for any surface that spans the whole
+// viewport, and derives the letterbox box from the viewport's CONTENT box -
+// `getBoundingClientRect()` includes the 1px border, while the transform layer is
+// `inset: 0` inside it.
 function getCanvasCoords(e) {
-  const brushSurface = e.currentTarget?.closest?.('.brush-interaction-surface')
-  if (brushSurface) {
-    const rect = brushSurface.getBoundingClientRect()
+  const imageSurface = e.currentTarget?.closest?.('[data-image-surface]')
+  if (imageSurface) {
+    const rect = imageSurface.getBoundingClientRect()
     if (rect.width && rect.height) {
       const x = ((e.clientX - rect.left) / rect.width) * imageDimensions.width
       const y = ((e.clientY - rect.top) / rect.height) * imageDimensions.height

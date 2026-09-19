@@ -402,7 +402,95 @@ export async function checkSelectionTools(h, hasResult) {
     check('marching-ants canvas sized to the image', antsSize !== '300x150', `canvas was ${antsSize}`)
     await shoot(page, '08b-wand-selection')
 
-    // The other half of useKeyboardShortcuts: Escape must drop the selection.
+    // A rectangle marquee must be DRAWN where it was dragged. The marching-ants
+    // canvas inherits `object-fit: contain` from `.viewport-img`, but a canvas
+    // IGNORES object-fit and stretches to fill its containing block - so the ants
+    // were painted distorted and away from the image, and the error changed with
+    // the UI font size (which changes the viewport's aspect ratio). Pinning the
+    // overlay canvas and the selection surface to the image box is what this
+    // asserts: the drawn rectangle and the dragged rectangle are the same one.
+    console.log('\nSelection marquee is drawn where it is dragged')
+    await selectTool(page, 'select')
+    await page.locator('.select-toolbar .b-pill:has-text("Rectangle")').first().click()
+    await page.waitForTimeout(300)
+    const marquee = await page.evaluate(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+      const surface = document.querySelector('.selection-interaction-surface')
+      const overlay = document.querySelector('.selection-overlay-canvas')
+      const sr = surface.getBoundingClientRect()
+      const x1 = sr.x + sr.width * 0.25
+      const y1 = sr.y + sr.height * 0.25
+      const x2 = sr.x + sr.width * 0.65
+      const y2 = sr.y + sr.height * 0.6
+      const fire = (t, x, y) =>
+        surface.dispatchEvent(
+          new PointerEvent(t, { clientX: x, clientY: y, pointerId: 1, isPrimary: true, bubbles: true, cancelable: true })
+        )
+      fire('pointerdown', x1, y1)
+      await sleep(50)
+      fire('pointermove', x2, y2)
+      await sleep(50)
+      fire('pointerup', x2, y2)
+      // The ants are drawn by a rAF loop, so give it a few frames.
+      await sleep(900)
+
+      const or_ = overlay.getBoundingClientRect()
+      const W = overlay.width, H = overlay.height
+      let minX = 1e9, maxX = -1, minY = 1e9, maxY = -1, n = 0
+      if (W > 1 && H > 1) {
+        const d = overlay.getContext('2d').getImageData(0, 0, W, H).data
+        for (let i = 3, p = 0; i < d.length; i += 4, p++) {
+          if (d[i] > 20) {
+            const x = p % W, y = (p / W) | 0
+            n++
+            if (x < minX) minX = x
+            if (x > maxX) maxX = x
+            if (y < minY) minY = y
+            if (y > maxY) maxY = y
+          }
+        }
+      }
+      const toImg = (cx, cy) => ({ x: ((cx - sr.x) / sr.width) * W, y: ((cy - sr.y) / sr.height) * H })
+      const a = toImg(x1, y1)
+      const b = toImg(x2, y2)
+      return {
+        overlayMatchesSurface:
+          Math.abs(or_.x - sr.x) < 1.5 && Math.abs(or_.width - sr.width) < 1.5,
+        expected: {
+          x: +Math.min(a.x, b.x).toFixed(1),
+          y: +Math.min(a.y, b.y).toFixed(1),
+          w: +Math.abs(b.x - a.x).toFixed(1),
+          h: +Math.abs(b.y - a.y).toFixed(1)
+        },
+        drawn: n ? { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 } : null
+      }
+    })
+    check(
+      'selection overlay canvas covers the selection surface',
+      marquee.overlayMatchesSurface,
+      'overlay canvas and selection surface are not the same box'
+    )
+    if (marquee.drawn) {
+      // The ants add a couple of pixels of stroke width, so allow a small slack.
+      const tol = 8
+      const dx = Math.abs(marquee.drawn.x - marquee.expected.x)
+      const dy = Math.abs(marquee.drawn.y - marquee.expected.y)
+      const dw = Math.abs(marquee.drawn.w - marquee.expected.w)
+      const dh = Math.abs(marquee.drawn.h - marquee.expected.h)
+      check(
+        'marquee is drawn where it was dragged',
+        dx < tol && dy < tol && dw < tol && dh < tol,
+        `drawn ${JSON.stringify(marquee.drawn)} vs dragged ${JSON.stringify(marquee.expected)}`
+      )
+    } else {
+      check('marquee is drawn where it was dragged', false, 'selection overlay canvas was never painted')
+    }
+
+    // Put the shape back: the checks below re-select by CLICKING, which only
+    // creates a selection for the Magic Wand.
+    await page.locator('.select-toolbar .b-pill:has-text("Magic Wand")').first().click()
+    await page.waitForTimeout(300)
+
     // There is no "dismiss selection" button, so this key is the only affordance.
     // Done before the erase click so the erase path below still gets a selection.
     await page.keyboard.press('Escape')
