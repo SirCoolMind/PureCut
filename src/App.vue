@@ -1,17 +1,5 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch, defineAsyncComponent } from 'vue'
-import {
-  Sparkles,
-  RotateCcw,
-  HardDrive,
-  Wrench,
-  RefreshCw,
-  Trash2,
-  Monitor,
-  Settings,
-  Type
-} from 'lucide-vue-next'
-import { appVersion, modelOptions } from './constants.js'
 // Canvas handles are live module bindings, not refs - see src/core/canvasStore.ts.
 // Read directly; replaced only through that module's setters.
 import { maskCanvas, originalCanvas, clearCanvases } from './core/canvasStore.js'
@@ -38,6 +26,7 @@ import ZoomToolbar from './components/ZoomToolbar.vue'
 import StageHeader from './components/StageHeader.vue'
 import StageFooter from './components/StageFooter.vue'
 import TuningSidebar from './components/TuningSidebar.vue'
+import Navbar from './components/Navbar.vue'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -418,121 +407,27 @@ onUnmounted(() => {
 <template>
   <div class="app-shell" :class="{ 'in-workspace': !!originalUrl }">
     <!-- Navbar (Fixed 48px height) -->
-    <header class="navbar">
-      <div class="brand">
-        <div class="brand-icon">
-          <img src="/purecut-icon.png" alt="PureCut" class="brand-img" />
-        </div>
-        <div class="brand-title">
-          <span class="brand-name">Pure<span>Cut</span></span>
-          <button class="version-badge" @click="showInfoModal = true" title="Version, Changelog & Roadmap">
-            v{{ appVersion }}
-          </button>
-          <button 
-            class="btn-benchmark-nav" 
-            @click="showBenchmarkPage = true" 
-            title="Inspect Model Benchmark & Cutout Comparison for Test Image"
-          >
-            <Sparkles :size="11" /> Model Showcase
-          </button>
-        </div>
-      </div>
-
-      <!-- Center: Model Status & Preload Pill -->
-      <div class="model-status-bar">
-        <div class="model-picker-wrapper">
-          <select 
-            class="model-picker-select" 
-            :value="selectedModel"
-            :disabled="isProcessing || isPreloading"
-            @change="handleModelSelectChange"
-          >
-            <option v-for="model in modelOptions" :key="model.id" :value="model.id">
-              {{ model.name }} ({{ model.size }})
-            </option>
-          </select>
-          <div class="model-picker-chevron">
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-          </div>
-        </div>
-
-        <div class="model-indicator" :class="{ 'is-cached': currentModelCached }" :title="currentModelCached ? 'Model cached locally in browser' : 'Model weights not downloaded yet'">
-          <span class="status-dot"></span>
-          <span class="model-status-text">{{ currentModelCached ? 'Ready' : 'Not Cached' }}</span>
-        </div>
-
-        <button
-          v-if="!currentModelCached"
-          class="btn-preload"
-          :disabled="isPreloading || isProcessing"
-          @click="handlePreload"
-          :title="isPreloading ? 'Downloading weights...' : 'Preload model weights now'"
-        >
-          <RefreshCw :size="11" :class="{ spin: isPreloading }" />
-          <span class="btn-preload-text">{{ isPreloading ? 'Loading...' : 'Preload' }}</span>
-        </button>
-
-        <!-- Cache storage size indicator & clear cache trigger -->
-        <div class="cache-status-pill" :title="`Total AI model storage used: ${formattedCacheUsage}`">
-          <HardDrive :size="11" />
-          <span>{{ formattedCacheUsage }}</span>
-          <button
-            class="btn-clear-cache"
-            :disabled="isClearingCache || isProcessing"
-            @click="clearAllCache"
-            title="Clear downloaded AI models & storage cache"
-          >
-            <Trash2 :size="11" :class="{ spin: isClearingCache }" />
-            {{ isClearingCache ? 'Clearing...' : 'Clear' }}
-          </button>
-        </div>
-      </div>
-
-      <!-- Right: Browser Zoom Reset & Mode Switcher -->
-      <div class="navbar-right-actions">
-        <button
-          v-if="isBrowserZoomed"
-          class="btn-browser-zoom"
-          @click="resetBrowserZoom"
-          :title="`Browser zoom is ${browserZoomLevel}%. Click to reset.`"
-        >
-          <Monitor :size="12" />
-          <span>Page {{ browserZoomLevel }}%</span>
-          <RotateCcw :size="11" />
-        </button>
-
-        <div class="mode-toggle-group">
-          <button
-            class="btn-font-scale"
-            @click="cycleFontSize"
-            :title="`Interface Font Size: ${fontSize.toUpperCase()} (Click to cycle: Small, Medium, Large, Extra Large)`"
-          >
-            <Type :size="13" />
-            <span class="font-scale-tag">{{ fontSize === 'compact' ? 'S' : fontSize === 'normal' ? 'M' : fontSize === 'medium' ? 'L' : 'XL' }}</span>
-          </button>
-          <button
-            class="btn-settings"
-            @click="showSettingsModal = true"
-            title="App Settings & Accessibility"
-            style="background: transparent; border: none; color: #94a3b8; cursor: pointer; display: flex; align-items: center; padding: 0 6px; margin-right: 4px;"
-          >
-            <Settings :size="14" />
-          </button>
-          <button
-            :class="['mode-btn', { active: userMode === 'standard' }]"
-            @click="userMode = 'standard'"
-          >
-            Standard
-          </button>
-          <button
-            :class="['mode-btn', { active: userMode === 'power' }]"
-            @click="userMode = 'power'"
-          >
-            <Wrench :size="12" /> Power User
-          </button>
-        </div>
-      </div>
-    </header>
+    <Navbar
+      :is-processing="isProcessing"
+      :is-preloading="isPreloading"
+      :selected-model="selectedModel"
+      :current-model-cached="currentModelCached"
+      :formatted-cache-usage="formattedCacheUsage"
+      :is-clearing-cache="isClearingCache"
+      :is-browser-zoomed="isBrowserZoomed"
+      :browser-zoom-level="browserZoomLevel"
+      :font-size="fontSize"
+      :user-mode="userMode"
+      @model-change="handleModelSelectChange"
+      @preload="handlePreload"
+      @clear-cache="clearAllCache"
+      @reset-browser-zoom="resetBrowserZoom"
+      @cycle-font-size="cycleFontSize"
+      @open-info="showInfoModal = true"
+      @open-showcase="showBenchmarkPage = true"
+      @open-settings="showSettingsModal = true"
+      @update:user-mode="userMode = $event"
+    />
 
     <!-- Main Content Area (Zero Window Scroll) -->
     <main class="main-content">
