@@ -27,6 +27,7 @@ import StageHeader from './components/StageHeader.vue'
 import StageFooter from './components/StageFooter.vue'
 import TuningSidebar from './components/TuningSidebar.vue'
 import Navbar from './components/Navbar.vue'
+import CanvasViewport from './components/CanvasViewport.vue'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -186,6 +187,17 @@ const {
 // re-invokes a changed function ref (null first, then the element again).
 function setFileInput(el) {
   fileInput.value = el
+}
+
+// Same trick for the viewport's two canvases: useCompositor owns the display
+// canvas and useSelectionOverlay the selection canvas, and both read the refs
+// App.vue created, so the element has to be handed back here.
+function setDisplayCanvas(el) {
+  displayCanvasRef.value = el
+}
+
+function setSelectionCanvas(el) {
+  selectionCanvasRef.value = el
 }
 
 // The animated contour outline is currently inert - nothing calls toggleOutline(),
@@ -467,142 +479,40 @@ onUnmounted(() => {
           />
 
           <!-- Dynamic Viewport with Wheel Zoom & Pan Support -->
-          <div
-            :class="['comparison-viewport', `bg-${previewBg}`, { 'is-brush-active': activeTool === 'brush', 'is-select-active': activeTool === 'select', 'is-panning': isPanning, 'tool-pan': activeTool === 'pan' }]"
+          <CanvasViewport
+            :preview-bg="previewBg"
+            :active-tool="activeTool"
+            :is-panning="isPanning"
+            :result-url="resultUrl"
+            :original-url="originalUrl"
+            :slider-position="sliderPosition"
+            :has-selection="hasSelection"
+            :is-selecting="isSelecting"
+            :show-outline="showOutline"
+            :subjects-drawer-open="showSubjectsDrawer"
+            :subjects="detectedSubjects"
+            :zoom-level="zoomLevel"
+            :pan-offset="panOffset"
+            :set-display-canvas="setDisplayCanvas"
+            :set-selection-canvas="setSelectionCanvas"
             @wheel="onWheelZoom"
-          >
-            <!-- Zoom & Pan Floating Controls -->
-            <ZoomToolbar
-              :zoom-level="zoomLevel"
-              :pan-offset="panOffset"
-              @zoom-in="zoomIn"
-              @zoom-out="zoomOut"
-              @reset="resetZoom"
-            />
-
-            <!-- Scalable & Pannable Stage Surface Container -->
-            <div
-              class="viewport-transform-layer"
-              :style="{
-                transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
-                transformOrigin: 'center center'
-              }"
-            >
-              <!-- Cutout Result Image (Bottom Layer) — hidden during brush mode, canvas takes over -->
-              <img
-                v-if="resultUrl && activeTool !== 'brush'"
-                :src="resultUrl"
-                alt="Cutout Result"
-                class="viewport-img result-img"
-                draggable="false"
-              />
-
-              <!-- Live GPU-composited display canvas (used during brush mode for real-time preview) -->
-              <canvas
-                v-if="activeTool === 'brush' && resultUrl"
-                ref="displayCanvasRef"
-                class="viewport-img result-img display-canvas"
-              ></canvas>
-
-              <!-- MODE 1: Split Comparison Viewport -->
-              <template v-if="activeTool === 'slider'">
-                <!-- Original Layer (Clipped Top) -->
-                <div
-                  class="clipped-layer"
-                  :style="{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }"
-                >
-                  <img
-                    :src="originalUrl"
-                    alt="Original Image"
-                    class="viewport-img original-img"
-                    draggable="false"
-                  />
-                </div>
-
-                <!-- Badges -->
-                <div class="badge-tag before-badge" :style="{ opacity: sliderPosition > 15 ? 1 : 0 }">
-                  Original
-                </div>
-                <div class="badge-tag after-badge" :style="{ opacity: sliderPosition < 85 ? 1 : 0 }">
-                  Cutout
-                </div>
-
-                <!-- Divider Slider Handle -->
-                <div class="slider-divider" :style="{ left: `${sliderPosition}%` }">
-                  <div class="slider-thumb">
-                    <span>◀ ▶</span>
-                  </div>
-                </div>
-
-                <!-- Range Overlay for drag interaction -->
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  v-model="sliderPosition"
-                  class="range-overlay"
-                  aria-label="Before/After Split Slider"
-                />
-              </template>
-
-              <!-- MODE 2: Magic Brush Interactive Painting Layer -->
-              <template v-else-if="activeTool === 'brush'">
-                <div
-                  class="brush-interaction-surface"
-                  @pointerdown="onPointerDown"
-                  @pointermove="onPointerMove"
-                  @pointerup="onPointerUp"
-                  @pointerleave="onPointerUp"
-                >
-                  <div class="brush-cursor-guide"></div>
-                </div>
-              </template>
-
-              <!-- MODE 3: Dotted Marquee Selection Interactive Layer -->
-              <template v-else-if="activeTool === 'select'">
-                <div
-                  class="selection-interaction-surface"
-                  @pointerdown="onSelectPointerDown"
-                  @pointermove="onSelectPointerMove"
-                  @pointerup="onSelectPointerUp"
-                  @pointerleave="onSelectPointerUp"
-                ></div>
-              </template>
-
-              <!-- Dotted Marching Ants Selection Overlay Canvas (always rendered on top when selection is active) -->
-              <canvas
-                ref="selectionCanvasRef"
-                class="viewport-img selection-overlay-canvas"
-                :style="{ display: (activeTool === 'select' && (hasSelection || isSelecting)) ? 'block' : 'none' }"
-              ></canvas>
-
-              <!-- Global Cutout Marching Ants Outline Canvas -->
-              <canvas
-                id="outlineCanvas"
-                class="viewport-img outline-overlay-canvas"
-                :style="{ display: showOutline ? 'block' : 'none' }"
-              ></canvas>
-            </div>
-
-            <!-- Multi-Subject Drawer Panel Overlay -->
-            <SubjectsDrawer
-              :subjects="detectedSubjects"
-              :open="showSubjectsDrawer"
-              @close="showSubjectsDrawer = false"
-              @toggle="toggleSubjectVisibility"
-              @erase="eraseSubject"
-            />
-
-            <!-- Pan Drag Overlay when activeTool === 'pan' -->
-            <div
-              v-if="activeTool === 'pan'"
-              class="pan-interaction-surface"
-              @pointerdown="onPanStart"
-              @pointermove="onPanMove"
-              @pointerup="onPanEnd"
-              @pointerleave="onPanEnd"
-            ></div>
-          </div>
+            @update:slider-position="sliderPosition = $event"
+            @brush-down="onPointerDown"
+            @brush-move="onPointerMove"
+            @brush-up="onPointerUp"
+            @select-down="onSelectPointerDown"
+            @select-move="onSelectPointerMove"
+            @select-up="onSelectPointerUp"
+            @pan-start="onPanStart"
+            @pan-move="onPanMove"
+            @pan-end="onPanEnd"
+            @close-subjects="showSubjectsDrawer = false"
+            @toggle-subject="toggleSubjectVisibility"
+            @erase-subject="eraseSubject"
+            @zoom-in="zoomIn"
+            @zoom-out="zoomOut"
+            @reset-zoom="resetZoom"
+          />
 
           <!-- Stage Footer: Hint & Actions -->
           <StageFooter
