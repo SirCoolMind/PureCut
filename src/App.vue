@@ -3,18 +3,11 @@ import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch, defin
 import {
   Sparkles,
   RotateCcw,
-  Zap,
-  SlidersHorizontal,
-  Cpu,
   HardDrive,
-  Layers,
   Wrench,
   RefreshCw,
-  Maximize2,
   Trash2,
   Monitor,
-  Scan,
-  Sparkle,
   Settings,
   Type
 } from 'lucide-vue-next'
@@ -44,6 +37,7 @@ import SubjectsDrawer from './components/SubjectsDrawer.vue'
 import ZoomToolbar from './components/ZoomToolbar.vue'
 import StageHeader from './components/StageHeader.vue'
 import StageFooter from './components/StageFooter.vue'
+import TuningSidebar from './components/TuningSidebar.vue'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -742,159 +736,17 @@ onUnmounted(() => {
         </div>
 
         <!-- RIGHT COLUMN: Tuning Sidebar -->
-        <aside class="sidebar-column">
-          <!-- Tuning Header -->
-          <div class="sidebar-header">
-            <div class="sidebar-title">
-              <SlidersHorizontal v-if="userMode === 'standard'" :size="14" />
-              <Wrench v-else :size="14" />
-              <span>{{ userMode === 'standard' ? 'Quick Presets' : 'Power User Studio' }}</span>
-            </div>
-            <span class="sidebar-sub">{{ userMode === 'standard' ? '1-Click Adjust' : 'Live Canvas Controls' }}</span>
-          </div>
-
-          <!-- Standard Mode Presets -->
-          <div v-if="userMode === 'standard'" class="presets-container">
-            <button
-              :class="['preset-card', { active: tuning.preset === 'balanced' }]"
-              @click="applyPreset('balanced')"
-            >
-              <div class="preset-name">⚖️ Balanced (Default)</div>
-              <div class="preset-desc">Smooth edges, natural all-around cutoff.</div>
-            </button>
-            <button
-              :class="['preset-card', { active: tuning.preset === 'hair' }]"
-              @click="applyPreset('hair')"
-            >
-              <div class="preset-name">💇 Fine Hair & Fur</div>
-              <div class="preset-desc">Preserves wisps, soft fur, and delicate strands.</div>
-            </button>
-            <button
-              :class="['preset-card', { active: tuning.preset === 'product' }]"
-              @click="applyPreset('product')"
-            >
-              <div class="preset-name">📦 Clean Product</div>
-              <div class="preset-desc">Crisp boundary with inward trim to eliminate halos.</div>
-            </button>
-            <button
-              :class="['preset-card', { active: tuning.preset === 'aggressive' }]"
-              @click="applyPreset('aggressive')"
-            >
-              <div class="preset-name">✂️ Deep / Cluttered BG</div>
-              <div class="preset-desc">Aggressive cutoff for busy, difficult backgrounds.</div>
-            </button>
-          </div>
-
-          <!-- Power User Sliders & Settings -->
-          <div v-else class="power-container">
-            <!-- Slider 1: Alpha Cutoff -->
-            <div class="tune-group">
-              <div class="tune-label">
-                <span>Alpha Sensitivity (Cutoff):</span>
-                <strong>{{ Math.round(tuning.threshold * 100) }}%</strong>
-              </div>
-              <input
-                type="range"
-                min="0.10"
-                max="0.90"
-                step="0.05"
-                v-model.number="tuning.threshold"
-                @input="recompositeCanvas"
-                class="tune-slider"
-              />
-            </div>
-
-            <!-- Slider 2: Edge Softness / Feather -->
-            <div class="tune-group">
-              <div class="tune-label">
-                <span>Edge Softness (Feather):</span>
-                <strong>{{ tuning.feather }}px</strong>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="6"
-                step="1"
-                v-model.number="tuning.feather"
-                @input="recompositeCanvas"
-                class="tune-slider"
-              />
-            </div>
-
-            <!-- Slider 3: Edge Shift / Trim -->
-            <div class="tune-group">
-              <div class="tune-label">
-                <span>Edge Shift (Trim / Expand):</span>
-                <strong>{{ tuning.trim > 0 ? `+${tuning.trim}px` : `${tuning.trim}px` }}</strong>
-              </div>
-              <input
-                type="range"
-                min="-3"
-                max="3"
-                step="1"
-                v-model.number="tuning.trim"
-                @input="recompositeCanvas"
-                class="tune-slider"
-              />
-            </div>
-
-            <!-- Toggle: De-fringing -->
-            <div class="tune-group row-group">
-              <span>De-fringe Color Spill:</span>
-              <button
-                :class="['toggle-pill', { active: tuning.deFringe }]"
-                @click="tuning.deFringe = !tuning.deFringe; recompositeCanvas()"
-              >
-                {{ tuning.deFringe ? 'Active' : 'Off' }}
-              </button>
-            </div>
-
-            <!-- AI Engine & Model Selector -->
-            <div class="engine-box">
-              <div class="engine-row">
-                <label><Layers :size="12" /> Model:</label>
-                <select :value="selectedModel" class="sidebar-select" @change="handleModelSelectChange">
-                  <option v-for="m in modelOptions" :key="m.id" :value="m.id">
-                    {{ m.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="engine-row">
-                <label><Cpu :size="12" /> Engine:</label>
-                <select v-model="selectedDevice" class="sidebar-select" @change="reRunModel">
-                  <option value="gpu">WebGPU (Hardware GPU)</option>
-                  <option value="cpu">CPU (WASM Multi-thread)</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <!-- Telemetry & Hardware Utilization Card -->
-          <div class="telemetry-card">
-            <div class="telemetry-header">
-              <span>⚡ System Telemetry</span>
-              <span class="live-dot"></span>
-            </div>
-            <div class="telemetry-grid">
-              <div class="tele-item">
-                <span class="tele-k">Duration</span>
-                <span class="tele-v">{{ telemetry.durationSec }}s</span>
-              </div>
-              <div class="tele-item">
-                <span class="tele-k">RAM Heap</span>
-                <span class="tele-v">~{{ telemetry.ramAllocatedMB }} MB</span>
-              </div>
-              <div class="tele-item">
-                <span class="tele-k">Throughput</span>
-                <span class="tele-v">{{ telemetry.throughputMps }} MP/s</span>
-              </div>
-              <div class="tele-item">
-                <span class="tele-k">Threads</span>
-                <span class="tele-v">{{ telemetry.threads }} Cores</span>
-              </div>
-            </div>
-          </div>
-        </aside>
+        <TuningSidebar
+          :user-mode="userMode"
+          :tuning="tuning"
+          :selected-model="selectedModel"
+          :selected-device="selectedDevice"
+          :telemetry="telemetry"
+          @apply-preset="applyPreset"
+          @recomposite="recompositeCanvas"
+          @model-change="handleModelSelectChange"
+          @device-change="selectedDevice = $event; reRunModel()"
+        />
       </section>
     </main>
 
