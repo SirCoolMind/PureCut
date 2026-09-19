@@ -229,5 +229,17 @@ export function useCompositor({ imageDimensions, resultUrl, resultBlob, displayC
     }
   }
 
-  return { tuning, applyPreset, renderFastPreview, schedulePreview, recompositeCanvas }
+  /**
+   * Clear the "a preview frame is already queued" guard.
+   *
+   * `reset()` used to assign the module-level flag directly; now that the flag
+   * lives here it needs an accessor. Behaviour is unchanged: any frame that is
+   * already queued still fires, and `renderFastPreview()` returns early because
+   * the canvases are gone.
+   */
+  function clearPendingPreview() {
+    rAFPending = false
+  }
+
+  return { tuning, applyPreset, renderFastPreview, schedulePreview, recompositeCanvas, clearPendingPreview }
 }

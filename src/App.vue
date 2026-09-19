@@ -159,7 +159,7 @@ const {
 // Canvas compositing: fast GPU preview + debounced full-quality export, and the
 // tuning parameters they read. See useCompositor. Wired before the tool
 // composables below, which take these as callbacks.
-const { tuning, applyPreset, renderFastPreview, schedulePreview, recompositeCanvas } =
+const { tuning, applyPreset, renderFastPreview, schedulePreview, recompositeCanvas, clearPendingPreview } =
   useCompositor({ imageDimensions, resultUrl, resultBlob, displayCanvasRef })
 
 // Mask history: undo / redo / reset-to-raw-AI-mask. See useUndoRedo.
@@ -517,7 +517,7 @@ function reset() {
   resultBlob.value = null
   currentFileBlob.value = null
   clearCanvases()
-  rAFPending = false
+  clearPendingPreview()
   clearSelection()
   resetZoom()
   fileName.value = ''
