@@ -65,6 +65,8 @@ import { useUndoRedo } from './composables/useUndoRedo.js'
 import { useImageInput } from './composables/useImageInput.js'
 import { useOutlineOverlay } from './composables/useOutlineOverlay.js'
 import { useSubjects } from './composables/useSubjects.js'
+import { useBrush } from './composables/useBrush.js'
+import { useSelectionOverlay } from './composables/useSelectionOverlay.js'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -106,9 +108,6 @@ const showSettingsModal = ref(false)
 
 // UI Modes & Tools
 const { userMode, activeTool, sliderPosition, previewBg, copied } = useWorkspaceUi()
-const brushMode = ref('erase') // 'erase' | 'restore'
-const brushSize = ref(35)
-const isDrawing = ref(false)
 const displayCanvasRef = ref(null) // Live GPU-composited preview canvas
 const selectionCanvasRef = ref(null) // Dotted marching ants selection overlay
 let rAFPending = false // requestAnimationFrame batching flag
@@ -121,8 +120,6 @@ const lassoPoints = ref([])
 const activeSelection = ref(null) // { type: 'rect', x, y, width, height } | { type: 'lasso', points: [] } | { type: 'wand', points: [], visitedMask: Uint8Array, ... }
 const hasSelection = computed(() => !!activeSelection.value || (selectShape.value === 'polygon' && isSelecting.value && lassoPoints.value.length > 0))
 const wandTolerance = ref(25)
-let antsAnimationId = null
-let antsDashOffset = 0
 
 // Zoom & pan for the viewport. See useZoomPan.
 
@@ -178,6 +175,26 @@ const { detectedSubjects, showSubjectsDrawer, toggleSubjectVisibility, eraseSubj
 // The animated contour outline is currently inert - nothing calls toggleOutline(),
 // so showOutline is only ever read (by the template). See AGENTS.md known issues.
 const { showOutline } = useOutlineOverlay({ imageDimensions, zoomLevel })
+
+// Brush: pointer painting straight onto the mask. See useBrush.
+const { brushMode, brushSize, onPointerDown, onPointerMove, onPointerUp } =
+  useBrush({ activeTool, getCanvasCoords, schedulePreview, saveUndoState, recompositeCanvas })
+
+// Marching-ants overlay renderer. It owns only the ants animation; the selection
+// state it draws belongs to the selection tools. See useSelectionOverlay.
+const { startAntsAnimation, stopAntsAnimation } =
+  useSelectionOverlay({
+    selectionCanvasRef,
+    imageDimensions,
+    activeSelection,
+    isSelecting,
+    selectShape,
+    selectionBox,
+    lassoPoints,
+    zoomLevel,
+    activeTool,
+    hasSelection
+  })
 
 // Tuning Parameters
 const tuning = reactive({
@@ -703,175 +720,11 @@ function getCanvasCoords(e) {
   }
 }
 
-let lastPoint = null
+// The brush engine now lives in src/composables/useBrush.ts. Its handlers are
+// wired to the brush interaction surface in the template.
 
-function onPointerDown(e) {
-  if (activeTool.value !== 'brush' || !maskCtx) return
-  e.currentTarget.setPointerCapture(e.pointerId)
-  isDrawing.value = true
-  lastPoint = getCanvasCoords(e)
-
-  // Begin a new continuous path on the mask
-  maskCtx.lineCap = 'round'
-  maskCtx.lineJoin = 'round'
-  maskCtx.lineWidth = brushSize.value * 2
-  if (brushMode.value === 'erase') {
-    maskCtx.globalCompositeOperation = 'destination-out'
-    maskCtx.strokeStyle = 'rgba(0, 0, 0, 1)'
-  } else {
-    maskCtx.globalCompositeOperation = 'source-over'
-    maskCtx.strokeStyle = 'rgba(255, 255, 255, 1)'
-  }
-  maskCtx.beginPath()
-  maskCtx.moveTo(lastPoint.x, lastPoint.y)
-
-  // Draw a dot for single-click
-  maskCtx.fillStyle = maskCtx.strokeStyle
-  maskCtx.save()
-  maskCtx.globalCompositeOperation = maskCtx.globalCompositeOperation
-  maskCtx.beginPath()
-  maskCtx.arc(lastPoint.x, lastPoint.y, brushSize.value, 0, Math.PI * 2)
-  maskCtx.fill()
-  maskCtx.restore()
-
-  // Restart path for subsequent lineTo
-  maskCtx.beginPath()
-  maskCtx.moveTo(lastPoint.x, lastPoint.y)
-
-  schedulePreview()
-}
-
-function onPointerMove(e) {
-  if (!isDrawing.value || !maskCtx) return
-  const currentPoint = getCanvasCoords(e)
-
-  // Native vector path stroke — GPU-accelerated, single draw call
-  maskCtx.lineTo(currentPoint.x, currentPoint.y)
-  maskCtx.stroke()
-
-  // Keep path going for smooth continuous stroke
-  maskCtx.beginPath()
-  maskCtx.moveTo(currentPoint.x, currentPoint.y)
-  lastPoint = currentPoint
-
-  // Schedule rAF-batched preview (coalesceses multiple move events per frame)
-  schedulePreview()
-}
-
-function onPointerUp() {
-  if (isDrawing.value) {
-    isDrawing.value = false
-    lastPoint = null
-    saveUndoState()
-    // Full quality PNG export only once, on stroke completion
-    recompositeCanvas()
-  }
-}
-
-// --- DOTTED MARCHING ANTS SELECTION ENGINE ---
-function renderSelectionOverlay() {
-  const canvas = selectionCanvasRef.value
-  if (!canvas) return
-  const width = imageDimensions.width
-  const height = imageDimensions.height
-  if (!width || !height) return
-
-  if (canvas.width !== width || canvas.height !== height) {
-    canvas.width = width
-    canvas.height = height
-  }
-
-  const ctx = canvas.getContext('2d')
-  ctx.clearRect(0, 0, width, height)
-
-  const sel = activeSelection.value
-  if (!sel && !isSelecting.value) return
-
-  ctx.save()
-
-  // Define the selection path
-  ctx.beginPath()
-  if (isSelecting.value && selectShape.value === 'rect') {
-    const x = Math.min(selectionBox.startX, selectionBox.currentX)
-    const y = Math.min(selectionBox.startY, selectionBox.currentY)
-    const w = Math.abs(selectionBox.currentX - selectionBox.startX)
-    const h = Math.abs(selectionBox.currentY - selectionBox.startY)
-    ctx.rect(x, y, w, h)
-  } else if (isSelecting.value && (selectShape.value === 'lasso' || selectShape.value === 'magnetic') && lassoPoints.value.length > 1) {
-    const pts = lassoPoints.value
-    ctx.moveTo(pts[0].x, pts[0].y)
-    for (let i = 1; i < pts.length; i++) {
-      ctx.lineTo(pts[i].x, pts[i].y)
-    }
-  } else if (isSelecting.value && selectShape.value === 'polygon' && lassoPoints.value.length > 0) {
-    const pts = lassoPoints.value
-    ctx.moveTo(pts[0].x, pts[0].y)
-    for (let i = 1; i < pts.length; i++) {
-      ctx.lineTo(pts[i].x, pts[i].y)
-    }
-    // Draw guide line to current cursor
-    ctx.lineTo(selectionBox.currentX, selectionBox.currentY)
-  } else if (sel) {
-    if (sel.type === 'rect') {
-      ctx.rect(sel.x, sel.y, sel.width, sel.height)
-    } else if ((sel.type === 'lasso' || sel.type === 'wand') && sel.points.length > 1) {
-      ctx.moveTo(sel.points[0].x, sel.points[0].y)
-      for (let i = 1; i < sel.points.length; i++) {
-        ctx.lineTo(sel.points[i].x, sel.points[i].y)
-      }
-      ctx.closePath()
-    }
-  }
-
-  // 1. Soft semi-transparent blue highlight fill
-  ctx.fillStyle = 'rgba(99, 102, 241, 0.18)'
-  ctx.fill()
-
-  // 2. Dual-color "Marching Ants" outline (black base + animated white dashes)
-  ctx.lineCap = 'butt'
-  ctx.lineJoin = 'miter'
-  ctx.lineWidth = Math.max(1.5, Math.round(2 / zoomLevel.value))
-
-  // Black solid underlay for strong contrast over bright areas
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)'
-  ctx.setLineDash([])
-  ctx.stroke()
-
-  // White animated dashes on top
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)'
-  const dashLen = Math.max(4, Math.round(6 / zoomLevel.value))
-  ctx.setLineDash([dashLen, dashLen])
-  ctx.lineDashOffset = antsDashOffset
-  ctx.stroke()
-
-  ctx.restore()
-}
-
-function startAntsAnimation() {
-  if (antsAnimationId) return
-  const loop = () => {
-    antsDashOffset = (antsDashOffset - 0.4) % 100
-    renderSelectionOverlay()
-    if (activeTool.value === 'select' && (hasSelection.value || isSelecting.value)) {
-      antsAnimationId = requestAnimationFrame(loop)
-    } else {
-      antsAnimationId = null
-    }
-  }
-  antsAnimationId = requestAnimationFrame(loop)
-}
-
-function stopAntsAnimation() {
-  if (antsAnimationId) {
-    cancelAnimationFrame(antsAnimationId)
-    antsAnimationId = null
-  }
-  const canvas = selectionCanvasRef.value
-  if (canvas) {
-    const ctx = canvas.getContext('2d')
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-  }
-}
+// The marching-ants overlay renderer now lives in
+// src/composables/useSelectionOverlay.ts.
 
 // Edge-detection snapping function for Magnetic Lasso
 function findNearestObjectEdge(x, y, searchRadius = 18) {
