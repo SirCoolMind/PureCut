@@ -57,6 +57,7 @@ import { useSelectionTools } from './composables/useSelectionTools.js'
 import { useCompositor } from './composables/useCompositor.js'
 import { useModelCache } from './composables/useModelCache.js'
 import { useProcessing } from './composables/useProcessing.js'
+import ProcessingOverlay from './components/ProcessingOverlay.vue'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -598,46 +599,12 @@ onUnmounted(() => {
       </section>
 
       <!-- VIEW 2: Processing Overlay (Clean, Non-overlapping UI) -->
-      <section v-else-if="isProcessing" class="processing-section">
-        <div class="processing-card">
-          <div class="spinner-ring"></div>
-          <h2 class="processing-title">{{ statusMessage }}</h2>
-
-          <!-- Download Progress Indicator -->
-          <div v-if="downloadProgress.isDownloading" class="progress-box">
-            <div class="progress-labels">
-              <span>Model Weight Download</span>
-              <span>{{ downloadProgress.percent }}%</span>
-            </div>
-            <div class="progress-track">
-              <div class="progress-fill" :style="{ width: `${downloadProgress.percent}%` }"></div>
-            </div>
-          </div>
-
-          <!-- Real-Time Hardware Telemetry Grid (Redesigned & Distinct) -->
-          <div class="telemetry-live-grid">
-            <div class="telemetry-live-tile">
-              <div class="tile-header">
-                <span class="tile-badge cpu-badge"><Cpu :size="12" /> CPU</span>
-                <span class="tile-category">Compute Cores</span>
-              </div>
-              <div class="tile-main-value">
-                {{ telemetry.threads }} <span class="val-unit">Logical Threads</span>
-              </div>
-            </div>
-
-            <div class="telemetry-live-tile">
-              <div class="tile-header">
-                <span class="tile-badge ram-badge"><HardDrive :size="12" /> RAM</span>
-                <span class="tile-category">Heap Allocation</span>
-              </div>
-              <div class="tile-main-value">
-                ~180 <span class="val-unit">MB Estimated</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      <ProcessingOverlay
+        v-else-if="isProcessing"
+        :status-message="statusMessage"
+        :download-progress="downloadProgress"
+        :telemetry="telemetry"
+      />
 
       <!-- VIEW 3: Studio Workspace (2-Column Zero-Scroll Layout) -->
       <section v-else class="studio-workspace">
