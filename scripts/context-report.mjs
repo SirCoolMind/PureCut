@@ -139,10 +139,12 @@ async function main() {
       // optional file, not present
     }
   }
-  // scripts/ is tracked too, since agents read it
+  // scripts/ and tests/ are tracked too, since agents read them: the budget is
+  // about every file an agent must read, not only shipped source.
   const scriptFiles = await collectTextFiles(join(ROOT, 'scripts'))
+  const testFiles = await collectTextFiles(join(ROOT, 'tests'))
 
-  const all = [...srcFiles, ...scriptFiles, ...rootFiles]
+  const all = [...srcFiles, ...scriptFiles, ...testFiles, ...rootFiles]
   const measured = (await Promise.all(all.map(measure))).sort((a, b) => b.tokens - a.tokens)
 
   const totalLines = measured.reduce((sum, f) => sum + f.lines, 0)

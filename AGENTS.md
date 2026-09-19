@@ -19,6 +19,7 @@ server, no API, and no backend — images never leave the device.
 | Preview the built output | `npm run preview` |
 | Report AI context cost per file | `npm run context:report` |
 | Enforce the file-size budget | `npm run context:check` |
+| Unit tests (vitest, pure modules) | `npm test` |
 | Type-check the source | `npm run typecheck` |
 
 TypeScript is pinned to **5.x on purpose.** `vue-tsc` resolves
@@ -180,5 +181,18 @@ because scoped styles do not cross component boundaries. Vue also rewrites
     extraction (see the note in `TuningSidebar.vue`), not fixed.
 11. `ShowcaseModal.vue` (1000 lines) and `InfoModal.vue` (789) are over the
     450-line budget, and it is almost entirely scoped CSS (646 and 575 lines).
-    `npm run context:check` therefore exits 1 — the budget is unmet until those two
-    modals are split. `context:report` prints the per-block breakdown that says so.
+    `tests/e2e/regression.mjs` (536) is over it too, and `src/App.vue` (552) is
+    still above its 400-line target. `npm run context:check` therefore exits 1 —
+    the budget is unmet until those are split. `context:report` prints the
+    per-block breakdown that says which block to split in each case.
+
+## Test layout
+
+| Path | Runner | Scope |
+| --- | --- | --- |
+| `tests/unit/*.test.ts` | `npm test` (vitest) | `src/core/*.ts`: pure functions, no DOM |
+| `tests/e2e/regression.mjs` | `npm run test:regression` | the running app, needs :5173 |
+| `tests/fixtures/` | — | input image for the e2e run |
+
+The budget covers `tests/` as well as `src/` and `scripts/`, because those files
+are just as much part of the context an agent has to read.
