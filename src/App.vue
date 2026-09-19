@@ -8,7 +8,6 @@ import {
   RotateCcw,
   Zap,
   SlidersHorizontal,
-  Image as ImageIcon,
   Cpu,
   HardDrive,
   Layers,
@@ -17,10 +16,8 @@ import {
   Eraser,
   Paintbrush,
   Undo2,
-  SplitSquareVertical,
   Maximize2,
   Trash2,
-  Move,
   Monitor,
   BoxSelect,
   Lasso,
@@ -28,7 +25,6 @@ import {
   Wand2,
   PenTool,
   Scan,
-  Users,
   Sparkle,
   Settings,
   Type
@@ -57,6 +53,7 @@ import ModelChangePrompt from './components/ModelChangePrompt.vue'
 import ReplaceImagePrompt from './components/ReplaceImagePrompt.vue'
 import SubjectsDrawer from './components/SubjectsDrawer.vue'
 import ZoomToolbar from './components/ZoomToolbar.vue'
+import StageHeader from './components/StageHeader.vue'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -577,89 +574,18 @@ onUnmounted(() => {
         <!-- LEFT COLUMN: Canvas Stage -->
         <div class="stage-column">
           <!-- Top Info & Tool Selector Bar -->
-          <div class="stage-header">
-            <div class="meta-tags">
-              <span class="tag file-tag" :title="fileName">
-                <ImageIcon :size="13" />
-                <span class="file-tag-name">{{ fileName }}</span>
-              </span>
-              <span class="tag info-combined-tag" :title="`Dimensions: ${imageDimensions.width} × ${imageDimensions.height}px | Size: ${fileSize}`">
-                {{ imageDimensions.width }}×{{ imageDimensions.height }} · {{ fileSize }}
-              </span>
-              <button 
-                v-if="detectedSubjects.length > 1" 
-                :class="['tag subject-tag btn', { active: showSubjectsDrawer }]" 
-                @click="showSubjectsDrawer = !showSubjectsDrawer"
-                title="Toggle subjects panel"
-              >
-                <Users :size="13" /> {{ detectedSubjects.length }} Subjects
-              </button>
-            </div>
-
-            <!-- Tool Switcher: Compare Slider vs Magic Brush vs Select vs Pan -->
-            <div class="tool-switch-bar">
-              <button
-                :class="['tool-btn', { active: activeTool === 'slider' }]"
-                @click="activeTool = 'slider'"
-                title="Split Comparison Slider"
-              >
-                <SplitSquareVertical :size="14" /> Compare
-              </button>
-              <button
-                :class="['tool-btn', { active: activeTool === 'brush' }]"
-                @click="activeTool = 'brush'"
-                title="Erase or Restore Brush"
-              >
-                <Paintbrush :size="14" /> Magic Brush
-              </button>
-              <button
-                :class="['tool-btn', { active: activeTool === 'select' }]"
-                @click="activeTool = 'select'"
-                title="Dotted Marquee Selection (Rectangle & Lasso)"
-              >
-                <BoxSelect :size="14" /> Select
-              </button>
-              <button
-                :class="['tool-btn', { active: activeTool === 'pan' }]"
-                @click="activeTool = 'pan'"
-                title="Drag to Pan canvas"
-              >
-                <Move :size="14" /> Pan
-              </button>
-            </div>
-
-            <!-- Backdrop Switcher -->
-            <div class="backdrop-controls">
-              <button
-                :class="['bg-btn', { active: previewBg === 'checkerboard' }]"
-                @click="previewBg = 'checkerboard'"
-                title="Transparent Grid"
-              >
-                Grid
-              </button>
-              <button
-                :class="['bg-btn', { active: previewBg === 'white' }]"
-                @click="previewBg = 'white'"
-                title="White"
-              >
-                White
-              </button>
-              <button
-                :class="['bg-btn', { active: previewBg === 'black' }]"
-                @click="previewBg = 'black'"
-                title="Dark"
-              >
-                Dark
-              </button>
-              <button
-                :class="['bg-btn', { active: previewBg === 'gradient' }]"
-                @click="previewBg = 'gradient'"
-                title="Gradient"
-              >
-                Color
-              </button>
-            </div>
-          </div>
+          <StageHeader
+            :file-name="fileName"
+            :image-dimensions="imageDimensions"
+            :file-size="fileSize"
+            :subject-count="detectedSubjects.length"
+            :subjects-drawer-open="showSubjectsDrawer"
+            :active-tool="activeTool"
+            :preview-bg="previewBg"
+            @toggle-subjects="showSubjectsDrawer = !showSubjectsDrawer"
+            @update:active-tool="activeTool = $event"
+            @update:preview-bg="previewBg = $event"
+          />
 
           <!-- Dynamic Viewport with Wheel Zoom & Pan Support -->
           <div
