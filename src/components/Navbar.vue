@@ -199,8 +199,9 @@ defineEmits([
   color: #818cf8;
 }
 
-/* Model Status Bar (and .cached-text / .uncached-text / .spin)
-   - moved to src/components/ModelStatusBar.vue */
+/* Model Status Bar (.spin) - moved to src/components/ModelStatusBar.vue.
+   .cached-text / .uncached-text were deleted as dead CSS (no markup anywhere in
+   the app); see the note in that component. */
 
 .navbar-right-actions {
   display: flex;

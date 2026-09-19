@@ -174,25 +174,24 @@ still a rule).
 5. `App.vue` contains no `@media` queries — there is no responsive layout.
 6. The contour-outline overlay is unreachable. `showOutline` is only ever written
    by `toggleOutline()`, and nothing calls `toggleOutline` — not the template, not
-   `onKeyDown`. So the `#outlineCanvas` layer never becomes visible and
+   `useKeyboardShortcuts`. So the `#outlineCanvas` layer never becomes visible and
    `updateOutlineOverlay` / `stopOutlineAnimation` never run. Found while
    extracting `useOutlineOverlay.ts`; the code was moved verbatim rather than
    deleted, because dropping a feature is a product decision.
-7. Dead CSS rules are scattered through the components: `.demo-showcase-trigger`
-   and `.model-notice-pill` (in `UploadHero.vue`) and `.cached-text` /
-   `.uncached-text` (in `ModelStatusBar.vue`) have no matching markup anywhere in
-   the app. They were already dead before the components phase and moved with
-   their block rather than deleted, for the same reason as issue 6.
-8. The three power-user sliders call `recompositeCanvas` with the raw `input`
+7. The three power-user sliders call `recompositeCanvas` with the raw `input`
    event, so it arrives as the `immediateBlob` argument, which is truthy — every
    slider tick runs the full-resolution pixel loop synchronously instead of
    taking the ~120 ms debounce. The de-fringe toggle beside them is called with
    no arguments and does debounce. Pre-existing; preserved deliberately during the
    extraction (see the note in `TuningSidebar.vue`), not fixed.
-9. `src/App.vue` (552 lines) is the last file over the 450-line budget. Its
-   ≤400-line target is explicitly forgiven by the user, so `context:check`
-   allows it; everything else the budget covers now fits. Splitting the two
-   former offenders took three commits: `ShowcaseModal.vue` 1000 → 396 plus
+8. `src/App.vue` (531 lines) is the last file over the 450-line budget, and it
+   carries its own 600-line `targetAppVueLines` rather than the 400 the session-1
+   plan named. The user has explicitly forgiven it: reaching 400 would mean either
+   compacting the component tags' attribute lists onto single lines (which keeps
+   the token count and only games the metric) or hoisting shared state into a
+   module (forbidden by constraint 7). Everything else the budget covers now
+   fits, so `npm run context:check` exits 0. Splitting the two former offenders
+   took three commits: `ShowcaseModal.vue` 1000 → 396 plus
    `ShowcaseSliderStage` / `ShowcaseDiagnosis` / `ShowcaseGallery`, and
    `InfoModal.vue` 789 → 279 plus four `Info*Tab` components.
 

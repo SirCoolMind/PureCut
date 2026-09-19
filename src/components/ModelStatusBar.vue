@@ -11,9 +11,9 @@
  * keyframes per component scope - a sibling scope cannot reach them.
  * ProcessingOverlay and InfoModal each declare their own copy for the same reason.
  *
- * `.cached-text` / `.uncached-text` below have no markup anywhere in the app; they
- * were already dead before this extraction and moved with the block rather than
- * deleted (see AGENTS.md known issues).
+ * `.cached-text` / `.uncached-text` were deleted here: they had no markup
+ * anywhere in the app, and had already been carried through one extraction with a
+ * note rather than dropped. See the same note in `UploadHero.vue`.
  *
  * Extracted verbatim (markup + its scoped CSS) from App.vue's template during the
  * AI-context refactor; no behaviour was changed.
@@ -237,10 +237,6 @@ defineEmits(['model-change', 'preload', 'clear-cache'])
   opacity: 0.5;
   cursor: not-allowed;
 }
-
-/* Unreferenced - see the note in the script block. */
-.cached-text { color: #34d399; }
-.uncached-text { color: #fbbf24; }
 
 /* Owned here: both animated icons live in this component, and Vue renames
    keyframes per component scope. */

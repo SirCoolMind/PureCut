@@ -37,7 +37,9 @@
 /* HERO / DROPZONE VIEW - moved to src/components/UploadHero.vue
    .btn-benchmark-nav - moved to src/components/Navbar.vue */
 
-/* kbd / .model-notice-pill / .sr-only moved to src/components/UploadHero.vue */
+/* kbd / .sr-only moved to src/components/UploadHero.vue.
+   .model-notice-pill went with it and was then deleted as dead CSS (no markup
+   anywhere in the app); see the note in that component. */
 
 /* 2-COLUMN ZERO-SCROLL STUDIO WORKSPACE */
 .studio-workspace {

@@ -17,10 +17,11 @@
  * component boundaries, and the stage footer's download link still needs the copy
  * that stays there.
  *
- * `.demo-showcase-trigger` and `.model-notice-pill` below have no markup anywhere
- * in the app - they were already dead before this extraction and were moved with
- * the rest of the hero block rather than deleted, because dropping them is a
- * product decision. See AGENTS.md known issues.
+ * `.demo-showcase-trigger` and `.model-notice-pill` were deleted here. They had no
+ * markup anywhere in the app: they arrived with the hero block already dead, were
+ * carried through two extractions with a note each time, and have now been
+ * dropped rather than carried a third time. The showcase modal they were once
+ * wired to is reachable from the navbar's Model Lab button.
  */
 import { ShieldCheck, UploadCloud } from 'lucide-vue-next'
 
@@ -179,42 +180,6 @@ defineEmits(['browse', 'drop', 'select'])
   margin-top: 12px;
   font-size: 11.5px;
   color: #64748b;
-}
-
-/* Unreferenced - see the note in the script block. */
-.demo-showcase-trigger {
-  margin-top: 18px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(99, 102, 241, 0.12);
-  border: 1px solid rgba(99, 102, 241, 0.3);
-  padding: 6px 14px;
-  border-radius: 9999px;
-  font-size: 12px;
-  color: #a5b4fc;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.demo-showcase-trigger:hover {
-  background: rgba(99, 102, 241, 0.25);
-  border-color: #6366f1;
-  color: #ffffff;
-  transform: translateY(-1px);
-}
-
-.demo-showcase-trigger strong {
-  color: #ffffff;
-}
-
-/* Unreferenced - see the note in the script block. */
-.model-notice-pill {
-  margin-top: 14px;
-  font-size: 11px;
-  padding: 5px 12px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.35);
 }
 
 kbd {
