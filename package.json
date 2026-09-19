@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
     "context:report": "node scripts/context-report.mjs",
-    "context:check": "node scripts/context-report.mjs --check"
+    "context:check": "node scripts/context-report.mjs --check",
+    "test:regression": "node tests/e2e/regression.mjs",
+    "test:regression:fast": "node tests/e2e/regression.mjs --no-model"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
