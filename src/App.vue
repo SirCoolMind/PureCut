@@ -2,9 +2,6 @@
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch, defineAsyncComponent } from 'vue'
 import {
   Sparkles,
-  Download,
-  Copy,
-  Check,
   RotateCcw,
   Zap,
   SlidersHorizontal,
@@ -13,17 +10,9 @@ import {
   Layers,
   Wrench,
   RefreshCw,
-  Eraser,
-  Paintbrush,
-  Undo2,
   Maximize2,
   Trash2,
   Monitor,
-  BoxSelect,
-  Lasso,
-  Magnet,
-  Wand2,
-  PenTool,
   Scan,
   Sparkle,
   Settings,
@@ -54,6 +43,7 @@ import ReplaceImagePrompt from './components/ReplaceImagePrompt.vue'
 import SubjectsDrawer from './components/SubjectsDrawer.vue'
 import ZoomToolbar from './components/ZoomToolbar.vue'
 import StageHeader from './components/StageHeader.vue'
+import StageFooter from './components/StageFooter.vue'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -726,144 +716,29 @@ onUnmounted(() => {
           </div>
 
           <!-- Stage Footer: Hint & Actions -->
-          <div class="stage-footer">
-            <!-- Left Info -->
-            <div class="footer-info">
-              <span v-if="activeTool === 'slider'" class="slider-hint">
-                ↔ Drag slider to compare cutout with original
-              </span>
-              <div v-else-if="activeTool === 'brush'" class="brush-toolbar">
-                <div class="brush-mode-pills">
-                  <button
-                    :class="['b-pill', { active: brushMode === 'erase' }]"
-                    @click="brushMode = 'erase'"
-                  >
-                    <Eraser :size="12" /> Erase Extra Background
-                  </button>
-                  <button
-                    :class="['b-pill', { active: brushMode === 'restore' }]"
-                    @click="brushMode = 'restore'"
-                  >
-                    <Paintbrush :size="12" /> Restore Subject
-                  </button>
-                </div>
-
-                <div class="size-control">
-                  <span>Size: <strong>{{ brushSize }}px</strong></span>
-                  <input type="range" min="8" max="100" v-model.number="brushSize" class="mini-range" />
-                </div>
-
-                <button class="btn-mini" @click="handleUndo" :disabled="undoHistory.length <= 1" title="Undo stroke">
-                  <Undo2 :size="13" /> Undo
-                </button>
-                <button class="btn-mini" @click="resetBrush" title="Reset to raw AI mask">
-                  Reset
-                </button>
-              </div>
-
-              <!-- Selection Tool Footer Controls -->
-              <div v-else-if="activeTool === 'select'" class="select-toolbar">
-                <div class="brush-mode-pills">
-                  <button
-                    :class="['b-pill', { active: selectShape === 'magnetic' }]"
-                    @click="selectShape = 'magnetic'; clearSelection()"
-                    title="Smart Magnetic Lasso: Snaps to detected object contours"
-                  >
-                    <Magnet :size="12" /> Magnetic Lasso
-                  </button>
-                  <button
-                    :class="['b-pill', { active: selectShape === 'lasso' }]"
-                    @click="selectShape = 'lasso'; clearSelection()"
-                    title="Freehand Lasso Selection"
-                  >
-                    <Lasso :size="12" /> Freehand
-                  </button>
-                  <button
-                    :class="['b-pill', { active: selectShape === 'polygon' }]"
-                    @click="selectShape = 'polygon'; clearSelection()"
-                    title="Click points to draw a precise polygonal perimeter"
-                  >
-                    <PenTool :size="12" /> Polygon
-                  </button>
-                  <button
-                    :class="['b-pill', { active: selectShape === 'rect' }]"
-                    @click="selectShape = 'rect'; clearSelection()"
-                    title="Rectangle Marquee"
-                  >
-                    <BoxSelect :size="12" /> Rectangle
-                  </button>
-                  <button
-                    :class="['b-pill', { active: selectShape === 'wand' }]"
-                    @click="selectShape = 'wand'; clearSelection()"
-                    title="Magic Wand: Click to select regions by color similarity"
-                  >
-                    <Wand2 :size="12" /> Magic Wand
-                  </button>
-                </div>
-
-                <div v-if="selectShape === 'wand'" class="size-control">
-                  <span>Tolerance: <strong>{{ wandTolerance }}</strong></span>
-                  <input type="range" min="1" max="100" v-model.number="wandTolerance" class="mini-range" />
-                </div>
-
-                <!-- Action Buttons: Visible when an area is selected -->
-                <div v-if="hasSelection" class="selection-actions-group">
-                  <button
-                    class="btn-sel-action erase-btn"
-                    @click="applySelectionAction('erase')"
-                    title="Erase background inside selected area (Delete key)"
-                  >
-                    <Eraser :size="12" /> Erase Region
-                  </button>
-                  <button
-                    class="btn-sel-action restore-btn"
-                    @click="applySelectionAction('restore')"
-                    title="Restore subject inside selected area (Enter key)"
-                  >
-                    <Paintbrush :size="12" /> Restore Region
-                  </button>
-                  <button
-                    class="btn-sel-action cancel-btn"
-                    @click="clearSelection"
-                    title="Deselect area (Esc key)"
-                  >
-                    Deselect
-                  </button>
-                </div>
-                <span v-else class="select-hint">
-                  <span v-if="selectShape === 'magnetic'">🧲 Draw around any object — line snaps automatically to its detected edge</span>
-                  <span v-else-if="selectShape === 'lasso'">✏️ Draw freehand selection around any area</span>
-                  <span v-else-if="selectShape === 'polygon'">📍 Click points to draw a polygon. Click near start point to close.</span>
-                  <span v-else-if="selectShape === 'wand'">🪄 Click any area on the image to select similar colors</span>
-                  <span v-else>⬚ Drag a rectangle box around any area</span>
-                </span>
-              </div>
-              <span v-else-if="activeTool === 'pan'" class="slider-hint">
-                ✋ Click and drag anywhere to pan the canvas
-              </span>
-            </div>
-
-            <!-- Right Action Buttons -->
-            <div class="action-buttons">
-              <button class="btn-secondary" @click="reset" title="Upload another photo">
-                <RotateCcw :size="14" /> New Photo
-              </button>
-
-              <button class="btn-secondary" @click="copyToClipboard" :disabled="!resultBlob">
-                <component :is="copied ? Check : Copy" :size="14" />
-                {{ copied ? 'Copied!' : 'Copy Cutout' }}
-              </button>
-
-              <a
-                v-if="resultUrl"
-                :href="resultUrl"
-                :download="`purecut_${fileName.replace(/\.[^/.]+$/, '')}.png`"
-                class="btn-cta"
-              >
-                <Download :size="15" /> Download High-Res PNG
-              </a>
-            </div>
-          </div>
+          <StageFooter
+            :active-tool="activeTool"
+            :brush-mode="brushMode"
+            :brush-size="brushSize"
+            :undo-history-length="undoHistory.length"
+            :select-shape="selectShape"
+            :wand-tolerance="wandTolerance"
+            :has-selection="hasSelection"
+            :copied="copied"
+            :can-copy="!!resultBlob"
+            :result-url="resultUrl"
+            :file-name="fileName"
+            @update:brush-mode="brushMode = $event"
+            @update:brush-size="brushSize = $event"
+            @undo="handleUndo"
+            @reset-brush="resetBrush"
+            @select-shape="selectShape = $event; clearSelection()"
+            @update:wand-tolerance="wandTolerance = $event"
+            @apply-selection="applySelectionAction"
+            @clear-selection="clearSelection"
+            @reset="reset"
+            @copy="copyToClipboard"
+          />
         </div>
 
         <!-- RIGHT COLUMN: Tuning Sidebar -->
