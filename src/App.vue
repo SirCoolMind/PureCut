@@ -31,8 +31,6 @@ import {
   PenTool,
   Scan,
   Users,
-  Eye,
-  EyeOff,
   Sparkle,
   Settings,
   Type
@@ -59,6 +57,7 @@ import ProcessingOverlay from './components/ProcessingOverlay.vue'
 import UploadHero from './components/UploadHero.vue'
 import ModelChangePrompt from './components/ModelChangePrompt.vue'
 import ReplaceImagePrompt from './components/ReplaceImagePrompt.vue'
+import SubjectsDrawer from './components/SubjectsDrawer.vue'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -798,34 +797,13 @@ onUnmounted(() => {
             </div>
 
             <!-- Multi-Subject Drawer Panel Overlay -->
-            <div :class="['subjects-drawer', { open: showSubjectsDrawer }]">
-              <div class="drawer-header">
-                <h3>Detected Subjects ({{ detectedSubjects.length }})</h3>
-                <button class="drawer-close" @click="showSubjectsDrawer = false">✕</button>
-              </div>
-              <div class="drawer-body">
-                <div v-if="detectedSubjects.length === 0" class="empty-state">
-                  No distinct subjects found.
-                </div>
-                <div v-for="subject in detectedSubjects" :key="subject.id" class="subject-item">
-                  <div class="subject-thumb">
-                    <img :src="subject.thumbnail" :alt="subject.label" />
-                  </div>
-                  <div class="subject-info">
-                    <span class="subject-label">{{ subject.label }}</span>
-                    <span class="subject-meta">Area: {{ (subject.pixelRatio * 100).toFixed(1) }}%</span>
-                  </div>
-                  <div class="subject-actions">
-                    <button class="icon-btn" @click="toggleSubjectVisibility(subject)" :title="subject.visible ? 'Hide subject' : 'Show subject'">
-                      <component :is="subject.visible ? Eye : EyeOff" :size="14" />
-                    </button>
-                    <button class="icon-btn danger" @click="eraseSubject(subject)" title="Erase subject permanently">
-                      <Eraser :size="14" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <SubjectsDrawer
+              :subjects="detectedSubjects"
+              :open="showSubjectsDrawer"
+              @close="showSubjectsDrawer = false"
+              @toggle="toggleSubjectVisibility"
+              @erase="eraseSubject"
+            />
 
             <!-- Pan Drag Overlay when activeTool === 'pan' -->
             <div
