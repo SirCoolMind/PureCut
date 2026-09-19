@@ -1,13 +1,11 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch, defineAsyncComponent } from 'vue'
 import {
-  UploadCloud,
   Sparkles,
   Download,
   Copy,
   Check,
   RotateCcw,
-  ShieldCheck,
   Zap,
   SlidersHorizontal,
   Image as ImageIcon,
@@ -58,6 +56,7 @@ import { useCompositor } from './composables/useCompositor.js'
 import { useModelCache } from './composables/useModelCache.js'
 import { useProcessing } from './composables/useProcessing.js'
 import ProcessingOverlay from './components/ProcessingOverlay.vue'
+import UploadHero from './components/UploadHero.vue'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -211,6 +210,13 @@ const {
   onPaste,
   copyToClipboard
 } = useImageInput({ originalUrl, resultBlob, copied, processImage })
+
+// Captures the hero's hidden file input for useImageInput. Has to be a stable
+// function: an inline arrow would be re-created on every render, and Vue
+// re-invokes a changed function ref (null first, then the element again).
+function setFileInput(el) {
+  fileInput.value = el
+}
 
 // The animated contour outline is currently inert - nothing calls toggleOutline(),
 // so showOutline is only ever read (by the template). See AGENTS.md known issues.
@@ -550,53 +556,13 @@ onUnmounted(() => {
     <!-- Main Content Area (Zero Window Scroll) -->
     <main class="main-content">
       <!-- VIEW 1: Upload Dropzone -->
-      <section v-if="!originalUrl" class="hero-section">
-        <div class="hero-badge">
-          <ShieldCheck :size="13" />
-          <span>BRIA RMBG-1.4 Neural Engine · 100% On-Device</span>
-        </div>
-
-        <h1 class="hero-title">
-          Cutout anything.<br />
-          <span class="gradient-text">Zero data sent to servers.</span>
-        </h1>
-        <p class="hero-subtitle">
-          Next-gen background removal powered by BRIA RMBG-1.4. Handles tough hair, camouflaged clothing, and metallic reflections.
-        </p>
-
-        <!-- Dropzone Card -->
-        <div
-          class="dropzone-card"
-          @dragover.prevent
-          @drop.prevent="onDrop"
-          @click="fileInput.click()"
-        >
-          <input
-            ref="fileInput"
-            type="file"
-            accept="image/png, image/jpeg, image/webp"
-            class="sr-only"
-            @change="onFileSelect"
-          />
-
-          <div class="drop-icon-wrapper">
-            <UploadCloud :size="36" />
-          </div>
-
-          <div class="drop-text">
-            <h3>Drop your photo here, or browse</h3>
-            <p>JPG, PNG, WebP up to 35 MB</p>
-          </div>
-
-          <button type="button" class="btn-cta">
-            <UploadCloud :size="16" /> Choose Image
-          </button>
-
-          <div class="paste-hint">
-            or press <kbd>Ctrl</kbd> + <kbd>V</kbd> anywhere to paste from clipboard
-          </div>
-        </div>
-      </section>
+      <UploadHero
+        v-if="!originalUrl"
+        :input-ref="setFileInput"
+        @browse="fileInput.click()"
+        @drop="onDrop"
+        @select="onFileSelect"
+      />
 
       <!-- VIEW 2: Processing Overlay (Clean, Non-overlapping UI) -->
       <ProcessingOverlay

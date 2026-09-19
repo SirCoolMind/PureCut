@@ -34,7 +34,7 @@ are mid-migration into `tests/`. Do not assume they pass.
 
 | Module | Role |
 | --- | --- |
-| `src/App.vue` | The application shell: template, styles, and the logic not yet extracted (~2300 lines and shrinking). See the map below before reading it end-to-end. |
+| `src/App.vue` | The application shell: the wiring block, `getCanvasCoords`, `reset`, `onKeyDown` and the lifecycle hooks, plus whatever markup has not been extracted yet. See the map below before reading it end-to-end. |
 | `src/aiEngine.js` | Transformers.js wrapper. Model loading, device selection (WebGPU vs WASM), and the WebGPU→WASM fallback. |
 | `src/detectionEngine.js` | Pure pixel analysis: connected-component subject detection, magic-wand flood fill, mask contour extraction. No Vue, no DOM. |
 | `src/constants.js` | `appVersion`, `modelOptions`, `changelog`, `roadmap`. |
@@ -168,3 +168,7 @@ Styles: global `<style>` 2417–2829 · `<style scoped>` 2831–4403.
    `updateOutlineOverlay` / `stopOutlineAnimation` never run. Found while
    extracting `useOutlineOverlay.ts`; the code was moved verbatim rather than
    deleted, because dropping a feature is a product decision.
+9. `.demo-showcase-trigger` and `.model-notice-pill` have no matching markup
+   anywhere in the app. They were already dead before the components phase and
+   moved with the hero's CSS into `UploadHero.vue` rather than deleted, for the
+   same reason as issue 8.
