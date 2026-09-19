@@ -61,6 +61,8 @@ import { useDisplayScale } from './composables/useDisplayScale.js'
 import { useWorkspaceUi } from './composables/useWorkspaceUi.js'
 import { useZoomPan } from './composables/useZoomPan.js'
 import { useTelemetry } from './composables/useTelemetry.js'
+import { useUndoRedo } from './composables/useUndoRedo.js'
+import { useImageInput } from './composables/useImageInput.js'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -76,7 +78,6 @@ const resultBlob = ref(null)
 // Mask canvases for non-destructive editing & brush. The handles live in
 // src/core/canvasStore.ts as non-reactive module bindings, so extracted tools can
 // reach the live canvas without threading it through every function signature.
-const undoHistory = ref([])
 
 const fileName = ref('')
 const fileSize = ref('')
@@ -127,7 +128,6 @@ const showOutline = ref(false)
 const showSubjectsDrawer = ref(false)
 
 // Zoom & pan for the viewport. See useZoomPan.
-const redoHistory = ref([])
 
 const {
   zoomLevel,
@@ -153,8 +153,25 @@ const {
   resetBrowserZoom
 } = useDisplayScale()
 
-const fileInput = ref(null)
-const currentFileBlob = ref(null)
+// Mask history: undo / redo / reset-to-raw-AI-mask. See useUndoRedo.
+const { undoHistory, redoHistory, saveUndoState, handleUndo, handleRedo, resetBrush } =
+  useUndoRedo({ imageDimensions, recompositeCanvas })
+
+// Image intake: picker, drag & drop, paste, copy, and the replace-image prompt.
+const {
+  fileInput,
+  currentFileBlob,
+  showReplaceImagePrompt,
+  pendingNewImageFile,
+  pendingNewImageThumbnail,
+  confirmAndProcessImage,
+  confirmReplaceImage,
+  cancelReplaceImage,
+  onFileSelect,
+  onDrop,
+  onPaste,
+  copyToClipboard
+} = useImageInput({ originalUrl, resultBlob, copied, processImage })
 
 // Tuning Parameters
 const tuning = reactive({
@@ -170,9 +187,6 @@ const showInfoModal = ref(false)
 const showModelChangePrompt = ref(false)
 const pendingModelId = ref(null)
 const dontAskModelChangeAgain = ref(false)
-const showReplaceImagePrompt = ref(false)
-const pendingNewImageFile = ref(null)
-const pendingNewImageThumbnail = ref(null)
 
 const cacheUsageBytes = ref(0)
 const isClearingCache = ref(false)
@@ -742,42 +756,8 @@ function eraseSubject(subject) {
   detectedSubjects.value = detectedSubjects.value.filter(s => s.id !== subject.id)
 }
 
-// --- INTERACTIVE MAGIC BRUSH ENGINE ---
-function saveUndoState() {
-  if (!maskCtx) return
-  if (undoHistory.value.length > 15) undoHistory.value.shift()
-  const snapshot = maskCtx.getImageData(0, 0, imageDimensions.width, imageDimensions.height)
-  undoHistory.value.push(snapshot)
-  redoHistory.value = [] // clear redo on new action
-}
-
-function handleUndo() {
-  if (undoHistory.value.length <= 1 || !maskCtx) return
-  const currentState = undoHistory.value.pop() // remove current state
-  redoHistory.value.push(currentState) // add to redo
-  
-  const previousState = undoHistory.value[undoHistory.value.length - 1]
-  maskCtx.putImageData(previousState, 0, 0)
-  recompositeCanvas(true)
-}
-
-function handleRedo() {
-  if (redoHistory.value.length === 0 || !maskCtx) return
-  const nextState = redoHistory.value.pop()
-  undoHistory.value.push(nextState)
-  maskCtx.putImageData(nextState, 0, 0)
-  recompositeCanvas(true)
-}
-
-function resetBrush() {
-  if (undoHistory.value.length > 0 && maskCtx) {
-    const originalState = undoHistory.value[0]
-    maskCtx.putImageData(originalState, 0, 0)
-    undoHistory.value = [originalState]
-    redoHistory.value = []
-    recompositeCanvas(true)
-  }
-}
+// Undo / redo / reset-to-raw-AI-mask now live in src/composables/useUndoRedo.ts.
+// saveUndoState() is called from the brush, selection and subject tools below.
 
 // Coordinate mapping: accurately maps pointer events from the transformed container to exact canvas pixels
 function getCanvasCoords(e) {
@@ -1249,78 +1229,8 @@ function refreshDetectionData() {
   }
 }
 
-function confirmAndProcessImage(file) {
-  if (originalUrl.value) {
-    pendingNewImageFile.value = file
-    if (pendingNewImageThumbnail.value) {
-      URL.revokeObjectURL(pendingNewImageThumbnail.value)
-    }
-    pendingNewImageThumbnail.value = URL.createObjectURL(file)
-    showReplaceImagePrompt.value = true
-  } else {
-    processImage(file)
-  }
-}
-
-function confirmReplaceImage() {
-  const file = pendingNewImageFile.value
-  showReplaceImagePrompt.value = false
-  if (pendingNewImageThumbnail.value) {
-    URL.revokeObjectURL(pendingNewImageThumbnail.value)
-    pendingNewImageThumbnail.value = null
-  }
-  pendingNewImageFile.value = null
-  if (file) {
-    processImage(file)
-  }
-}
-
-function cancelReplaceImage() {
-  showReplaceImagePrompt.value = false
-  if (pendingNewImageThumbnail.value) {
-    URL.revokeObjectURL(pendingNewImageThumbnail.value)
-    pendingNewImageThumbnail.value = null
-  }
-  pendingNewImageFile.value = null
-}
-
-// Event Handlers
-function onFileSelect(e) {
-  const file = e.target.files?.[0]
-  if (file) confirmAndProcessImage(file)
-}
-
-function onDrop(e) {
-  const file = e.dataTransfer.files?.[0]
-  if (file) confirmAndProcessImage(file)
-}
-
-function onPaste(e) {
-  const items = e.clipboardData?.items
-  if (!items) return
-  for (const item of items) {
-    if (item.type.startsWith('image/')) {
-      const file = item.getAsFile()
-      if (file) {
-        confirmAndProcessImage(file)
-        break
-      }
-    }
-  }
-}
-
-async function copyToClipboard() {
-  if (!resultBlob.value) return
-  try {
-    await navigator.clipboard.write([
-      new ClipboardItem({ 'image/png': resultBlob.value })
-    ])
-    copied.value = true
-    setTimeout(() => (copied.value = false), 2000)
-  } catch (err) {
-    console.error('Clipboard copy failed:', err)
-  }
-}
+// Image intake (picker / drop / paste / copy) and the replace-image prompt now
+// live in src/composables/useImageInput.ts.
 
 function reset() {
   originalUrl.value = null
