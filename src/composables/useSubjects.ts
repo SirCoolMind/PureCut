@@ -23,6 +23,7 @@
 import { ref } from 'vue'
 import { detectSubjects } from '../detectionEngine.js'
 import { maskCanvas, maskCtx, originalCanvas } from '../core/canvasStore.js'
+import { subjectEraseRect } from '../core/maskOps.js'
 
 /** One connected component found by the detection engine. Mutated in place. */
 export interface DetectedSubject {
@@ -59,9 +60,10 @@ export function useSubjects({ saveUndoState, recompositeCanvas }: SubjectsDeps) 
     const action = subject.visible ? 'restore' : 'erase'
 
     if (maskCtx) {
+      const box = subjectEraseRect(subject)
       maskCtx.save()
       maskCtx.beginPath()
-      maskCtx.rect(subject.x, subject.y, subject.width, subject.height)
+      maskCtx.rect(box.x, box.y, box.w, box.h)
       maskCtx.clip()
 
       if (action === 'erase') {

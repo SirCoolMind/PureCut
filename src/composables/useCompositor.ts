@@ -31,6 +31,7 @@
 
 import { reactive, type Ref } from 'vue'
 import { maskCanvas, maskCtx, originalCanvas, originalCtx } from '../core/canvasStore.js'
+import { applyTrimThresholdDefringe } from '../core/maskOps.js'
 
 interface Tuning {
   preset: string
@@ -172,44 +173,10 @@ export function useCompositor({ imageDimensions, resultUrl, resultBlob, displayC
       const maskPixels = maskData.data
 
       const totalPixels = width * height
-      const thresholdVal = tuning.threshold * 255
-      const trimShift = tuning.trim * 20 // scale trim impact
 
-      for (let i = 0; i < totalPixels; i++) {
-        const idx = i * 4
-        let rawAlpha = maskPixels[idx + 3]
-
-        // Trim (Erode/Dilate) via Alpha Level Adjustment
-        if (trimShift > 0) {
-          // Erode: push alpha down, but rescale max back to 255 so the interior remains completely solid
-          rawAlpha = Math.max(0, (rawAlpha - trimShift) * (255 / (255 - trimShift)))
-        } else if (trimShift < 0) {
-          // Dilate: boost alpha to push the edge outwards
-          rawAlpha = Math.min(255, rawAlpha - trimShift)
-        }
-
-        // Apply Threshold (Smooth Step)
-        let finalAlpha = 0
-        if (rawAlpha >= thresholdVal) {
-          const range = 255 - thresholdVal
-          finalAlpha = range > 0 ? Math.min(255, Math.round(((rawAlpha - thresholdVal) / range) * 255)) : 255
-        } else {
-          finalAlpha = 0
-        }
-
-        imgPixels[idx + 3] = finalAlpha
-
-        // De-fringe color halo
-        if (tuning.deFringe && finalAlpha > 0 && finalAlpha < 240) {
-          const r = imgPixels[idx]
-          const g = imgPixels[idx + 1]
-          const b = imgPixels[idx + 2]
-          const avg = (r + g + b) / 3
-          imgPixels[idx] = Math.round(r * 0.85 + avg * 0.15)
-          imgPixels[idx + 1] = Math.round(g * 0.85 + avg * 0.15)
-          imgPixels[idx + 2] = Math.round(b * 0.85 + avg * 0.15)
-        }
-      }
+      // Trim -> threshold -> de-fringe. Pure pixel maths, so it lives in
+      // core/maskOps.ts where vitest can reach it without a canvas.
+      applyTrimThresholdDefringe(imgPixels, maskPixels, totalPixels, tuning)
 
       ctx.putImageData(imgData, 0, 0)
 

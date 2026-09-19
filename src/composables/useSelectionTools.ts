@@ -37,6 +37,7 @@
 import { type Ref } from 'vue'
 import { magicWandFloodFill } from '../detectionEngine.js'
 import { maskCtx, originalCanvas } from '../core/canvasStore.js'
+import { snapToNearestEdge, wandEraserRects } from '../core/maskOps.js'
 
 interface Point {
   x: number
@@ -135,44 +136,8 @@ export function useSelectionTools({
 
     const patch = maskCtx.getImageData(x0, y0, patchW, patchH).data
 
-    let bestX = x
-    let bestY = y
-    let maxScore = -1
-
-    // Scan pixels in the patch to find high-gradient mask transitions (alpha ~ 128 or sharp delta)
-    const step = 2 // sample every 2px for high performance
-    for (let py = 1; py < patchH - 1; py += step) {
-      for (let px = 1; px < patchW - 1; px += step) {
-        const idx = (py * patchW + px) * 4 + 3 // alpha channel of mask
-        const a = patch[idx]
-
-        // Alpha gradient magnitude (Sobel / central differences)
-        const aRight = patch[(py * patchW + (px + 1)) * 4 + 3]
-        const aLeft = patch[(py * patchW + (px - 1)) * 4 + 3]
-        const aDown = patch[((py + 1) * patchW + px) * 4 + 3]
-        const aUp = patch[((py - 1) * patchW + px) * 4 + 3]
-
-        const gx = Math.abs(aRight - aLeft)
-        const gy = Math.abs(aDown - aUp)
-        const gradient = gx + gy
-
-        // Transition score: combination of edge gradient and distance to cursor
-        if (gradient > 25) {
-          const curPxX = x0 + px
-          const curPxY = y0 + py
-          const dist = Math.hypot(curPxX - x, curPxY - y)
-          // Score favors strong gradients closer to the cursor
-          const score = gradient / (1 + dist * 0.7)
-          if (score > maxScore) {
-            maxScore = score
-            bestX = curPxX
-            bestY = curPxY
-          }
-        }
-      }
-    }
-
-    return { x: bestX, y: bestY }
+    // The snap itself is pure maths over that patch - see core/maskOps.ts.
+    return snapToNearestEdge(patch, patchW, patchH, x0, y0, x, y)
   }
 
   // Selection Pointer Handlers
@@ -307,9 +272,7 @@ export function useSelectionTools({
 
     if (sel.type === 'wand') {
       // For wand, we apply the precise visited mask mapped back to full resolution
-      const wandScale = sel.scale
       const wandW = sel.sw
-      const invScale = 1 / wandScale
 
       maskCtx.beginPath()
       maskCtx.rect(sel.x, sel.y, sel.width, sel.height)
@@ -324,13 +287,10 @@ export function useSelectionTools({
         maskCtx.fillStyle = 'rgba(255,255,255,1)'
       }
 
-      // High performance fill of matching pixels
-      for (let y = 0; y < sel.sh; y++) {
-        for (let x = 0; x < sel.sw; x++) {
-          if (sel.visitedMask[y * wandW + x]) {
-            maskCtx.fillRect(Math.floor(x * invScale), Math.floor(y * invScale), Math.ceil(invScale), Math.ceil(invScale))
-          }
-        }
+      // High performance fill of matching pixels. The working-grid -> full
+      // resolution mapping is pure maths, so it lives in core/maskOps.ts.
+      for (const r of wandEraserRects(sel.visitedMask, wandW, sel.sh, sel.scale)) {
+        maskCtx.fillRect(r.x, r.y, r.w, r.h)
       }
     } else {
       // Trace the active vector selection path onto the mask
