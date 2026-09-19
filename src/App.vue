@@ -43,9 +43,24 @@ import {
 import { appVersion, modelOptions } from './constants.js'
 import { detectSubjects, magicWandFloodFill, extractMaskContourSegments } from './detectionEngine.js'
 import { STORAGE_KEYS, cachedModelKey } from './core/storageKeys.js'
+// Canvas handles are live module bindings, not refs - see src/core/canvasStore.ts.
+// They are read directly (keeping the old call sites intact) and replaced through
+// the setters, because ES modules forbid assigning to an imported binding.
+import {
+  maskCanvas,
+  maskCtx,
+  originalCanvas,
+  originalCtx,
+  setMaskCanvas,
+  setMaskCtx,
+  setOriginalCanvas,
+  setOriginalCtx,
+  clearCanvases
+} from './core/canvasStore.js'
 import { useDisplayScale } from './composables/useDisplayScale.js'
 import { useWorkspaceUi } from './composables/useWorkspaceUi.js'
 import { useZoomPan } from './composables/useZoomPan.js'
+import { useTelemetry } from './composables/useTelemetry.js'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -58,11 +73,9 @@ const originalUrl = ref(null)
 const resultUrl = ref(null)
 const resultBlob = ref(null)
 
-// Mask canvases for non-destructive editing & brush
-let maskCanvas = null
-let maskCtx = null
-let originalCanvas = null
-let originalCtx = null
+// Mask canvases for non-destructive editing & brush. The handles live in
+// src/core/canvasStore.ts as non-reactive module bindings, so extracted tools can
+// reach the live canvas without threading it through every function signature.
 const undoHistory = ref([])
 
 const fileName = ref('')
@@ -74,15 +87,8 @@ const isProcessing = ref(false)
 const isPreloading = ref(false)
 const statusMessage = ref('')
 const downloadProgress = reactive({ loadedMB: 0, totalMB: 0, percent: 0, isDownloading: false })
-const telemetry = reactive({
-  durationMs: 0,
-  durationSec: '0.0',
-  ramAllocatedMB: 0,
-  ramTotalMB: 0,
-  throughputMps: '0.0',
-  threads: typeof navigator !== 'undefined' ? (navigator.hardwareConcurrency || 4) : 4,
-  deviceUsed: 'WebGPU (Hardware Accelerated)'
-})
+// Filled in by processImage() once inference completes. See useTelemetry.
+const { telemetry } = useTelemetry()
 
 const selectedModel = ref('briaai/RMBG-1.4')
 const selectedDevice = ref('gpu') // 'gpu' | 'cpu'
@@ -340,10 +346,11 @@ async function processImage(file) {
   })
 
   // Initialize offscreen original canvas
-  originalCanvas = document.createElement('canvas')
-  originalCanvas.width = imageDimensions.width
-  originalCanvas.height = imageDimensions.height
-  originalCtx = originalCanvas.getContext('2d', { willReadFrequently: true })
+  const originalCanvasEl = document.createElement('canvas')
+  originalCanvasEl.width = imageDimensions.width
+  originalCanvasEl.height = imageDimensions.height
+  setOriginalCanvas(originalCanvasEl)
+  setOriginalCtx(originalCanvasEl.getContext('2d', { willReadFrequently: true }))
   originalCtx.drawImage(img, 0, 0)
 
   try {
@@ -371,10 +378,11 @@ async function processImage(file) {
       maskImg.src = maskUrl
     })
 
-    maskCanvas = document.createElement('canvas')
-    maskCanvas.width = imageDimensions.width
-    maskCanvas.height = imageDimensions.height
-    maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true })
+    const maskCanvasEl = document.createElement('canvas')
+    maskCanvasEl.width = imageDimensions.width
+    maskCanvasEl.height = imageDimensions.height
+    setMaskCanvas(maskCanvasEl)
+    setMaskCtx(maskCanvasEl.getContext('2d', { willReadFrequently: true }))
     maskCtx.drawImage(maskImg, 0, 0)
     saveUndoState()
 
@@ -1319,10 +1327,7 @@ function reset() {
   resultUrl.value = null
   resultBlob.value = null
   currentFileBlob.value = null
-  maskCanvas = null
-  maskCtx = null
-  originalCanvas = null
-  originalCtx = null
+  clearCanvases()
   rAFPending = false
   clearSelection()
   resetZoom()

@@ -34,18 +34,21 @@ are mid-migration into `tests/`. Do not assume they pass.
 
 | Module | Role |
 | --- | --- |
-| `src/App.vue` | The entire application: UI, state, and the AI pipeline (~4400 lines). See the map below before reading it end-to-end. |
+| `src/App.vue` | The application shell: template, styles, and the logic not yet extracted (~2300 lines and shrinking). See the map below before reading it end-to-end. |
 | `src/aiEngine.js` | Transformers.js wrapper. Model loading, device selection (WebGPU vs WASM), and the WebGPU→WASM fallback. |
 | `src/detectionEngine.js` | Pure pixel analysis: connected-component subject detection, magic-wand flood fill, mask contour extraction. No Vue, no DOM. |
 | `src/constants.js` | `appVersion`, `modelOptions`, `changelog`, `roadmap`. |
 | `src/components/*.vue` | Three lazy-loaded modals (Info / Settings / Showcase). Dumb props + emits. |
+| `src/composables/*.ts` | `setup()`-scope state and behaviour, one concern per composable. Dependencies arrive as refs/callbacks rather than imports, so each module's signature is its whole contract. Currently `useDisplayScale`, `useWorkspaceUi`, `useZoomPan`, `useTelemetry`. |
+| `src/core/*.ts` | Framework-free modules: no Vue, no DOM side effects. Must be unit-testable in isolation. Currently `storageKeys.ts` and `canvasStore.ts`. |
 
-| `src/core/*.ts` | Framework-free modules: no Vue, no DOM side effects. Must be unit-testable in isolation. Currently `storageKeys.ts`. |
-
-> **Note:** `src/core/` is the start of a framework-free layer. A
-> `src/composables/` layer (state + logic per domain) is still planned. Prefer
-> those files over `App.vue` once they exist, and update this table as the
-> module list grows.
+> **Note:** the refactor moves code out of `App.vue` into `src/composables/`
+> (state + logic per concern) and `src/core/` (framework-free helpers). Prefer
+> those files over `App.vue`, and update this table as the module list grows.
+>
+> `src/core/canvasStore.ts` is the one deliberate exception to "no DOM": it owns
+> the `HTMLCanvasElement` / `CanvasRenderingContext2D` handles as **live ES module
+> bindings**. Read them directly; replace them only via its setters.
 
 **Data flow:** `processImage(file)` → `runTransformersModel()` returns a mask
 blob → the mask is drawn into an offscreen canvas → brush/selection tools mutate
