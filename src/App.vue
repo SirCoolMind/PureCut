@@ -68,6 +68,7 @@ import { useSubjects } from './composables/useSubjects.js'
 import { useBrush } from './composables/useBrush.js'
 import { useSelectionOverlay } from './composables/useSelectionOverlay.js'
 import { useSelectionTools } from './composables/useSelectionTools.js'
+import { useCompositor } from './composables/useCompositor.js'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -111,7 +112,6 @@ const showSettingsModal = ref(false)
 const { userMode, activeTool, sliderPosition, previewBg, copied } = useWorkspaceUi()
 const displayCanvasRef = ref(null) // Live GPU-composited preview canvas
 const selectionCanvasRef = ref(null) // Dotted marching ants selection overlay
-let rAFPending = false // requestAnimationFrame batching flag
 
 // Selection (Marching Ants) Tool System
 const selectShape = ref('magnetic') // 'magnetic' | 'lasso' | 'rect' | 'polygon' | 'wand'
@@ -147,6 +147,12 @@ const {
   updateBrowserZoom,
   resetBrowserZoom
 } = useDisplayScale()
+
+// Canvas compositing: fast GPU preview + debounced full-quality export, and the
+// tuning parameters they read. See useCompositor. Wired before the tool
+// composables below, which take these as callbacks.
+const { tuning, applyPreset, renderFastPreview, schedulePreview, recompositeCanvas } =
+  useCompositor({ imageDimensions, resultUrl, resultBlob, displayCanvasRef })
 
 // Mask history: undo / redo / reset-to-raw-AI-mask. See useUndoRedo.
 const { undoHistory, redoHistory, saveUndoState, handleUndo, handleRedo, resetBrush } =
@@ -217,15 +223,6 @@ const { onSelectPointerDown, onSelectPointerMove, onSelectPointerUp, clearSelect
     activeSelection,
     wandTolerance
   })
-
-// Tuning Parameters
-const tuning = reactive({
-  preset: 'balanced',
-  threshold: 0.5,
-  feather: 1,
-  trim: 0,
-  deFringe: true
-})
 
 // Modal State
 const showInfoModal = ref(false)
@@ -345,20 +342,7 @@ async function handlePreload() {
   }
 }
 
-// Preset Handlers
-function applyPreset(presetName) {
-  tuning.preset = presetName
-  if (presetName === 'balanced') {
-    tuning.threshold = 0.5; tuning.feather = 1; tuning.trim = 0; tuning.deFringe = true
-  } else if (presetName === 'hair') {
-    tuning.threshold = 0.4; tuning.feather = 2; tuning.trim = -1; tuning.deFringe = false
-  } else if (presetName === 'product') {
-    tuning.threshold = 0.6; tuning.feather = 0; tuning.trim = 1; tuning.deFringe = true
-  } else if (presetName === 'aggressive') {
-    tuning.threshold = 0.75; tuning.feather = 0; tuning.trim = 2; tuning.deFringe = true
-  }
-  recompositeCanvas()
-}
+// Preset handling (`applyPreset`) now lives in src/composables/useCompositor.ts.
 
 function formatBytes(bytes, decimals = 1) {
   if (!bytes) return '0 B'
@@ -537,156 +521,8 @@ function reRunModel() {
   }
 }
 
-// Fast GPU-composited preview — no pixel loop, no PNG encode, runs in <1ms
-function renderFastPreview() {
-  if (!originalCanvas || !maskCanvas) return
-  const canvas = displayCanvasRef.value
-  if (!canvas) return
-  const width = imageDimensions.width
-  const height = imageDimensions.height
-  if (!width || !height) return
-
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')
-
-  // Step 1: Draw original photo
-  ctx.clearRect(0, 0, width, height)
-  ctx.drawImage(originalCanvas, 0, 0)
-
-  // Step 2: Apply feathered mask using GPU composite ops (no pixel loop!)
-  if (tuning.feather > 0) {
-    const tempMask = document.createElement('canvas')
-    tempMask.width = width
-    tempMask.height = height
-    const tmpCtx = tempMask.getContext('2d')
-    tmpCtx.filter = `blur(${tuning.feather}px)`
-    tmpCtx.drawImage(maskCanvas, 0, 0)
-    ctx.globalCompositeOperation = 'destination-in'
-    ctx.drawImage(tempMask, 0, 0)
-  } else {
-    ctx.globalCompositeOperation = 'destination-in'
-    ctx.drawImage(maskCanvas, 0, 0)
-  }
-  ctx.globalCompositeOperation = 'source-over'
-}
-
-// Schedule a fast preview on the next animation frame (batched to screen refresh)
-function schedulePreview() {
-  if (rAFPending) return
-  rAFPending = true
-  requestAnimationFrame(() => {
-    rAFPending = false
-    renderFastPreview()
-  })
-}
-
-// Timer for debouncing heavy PNG blob encoding
-let recompositeDebounceTimer = null
-
-// Canvas Compositing Engine: Full-quality compositing with threshold, trim, de-fringe + PNG export
-function recompositeCanvas(immediateBlob = false) {
-  if (!originalCtx || !maskCtx) return
-  const width = imageDimensions.width
-  const height = imageDimensions.height
-  if (!width || !height) return
-
-  // 1. Immediately update fast GPU preview (<1ms) so the UI responds instantly
-  renderFastPreview()
-
-  // 2. Debounce heavy full-resolution pixel loop and PNG toBlob encoding
-  if (recompositeDebounceTimer) {
-    clearTimeout(recompositeDebounceTimer)
-    recompositeDebounceTimer = null
-  }
-
-  const runHeavyExport = () => {
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const ctx = canvas.getContext('2d', { willReadFrequently: true })
-
-    // Draw original image
-    ctx.drawImage(originalCanvas, 0, 0)
-    const imgData = ctx.getImageData(0, 0, width, height)
-    const imgPixels = imgData.data
-
-    // Apply feather (blur) if requested
-    const tempMaskCanvas = document.createElement('canvas')
-    tempMaskCanvas.width = width
-    tempMaskCanvas.height = height
-    const tempMaskCtx = tempMaskCanvas.getContext('2d', { willReadFrequently: true })
-    
-    // If trim is used but feather is 0, we need a slight blur to allow morphological edge shifting
-    let applyBlur = tuning.feather;
-    if (tuning.trim !== 0 && applyBlur === 0) {
-      applyBlur = Math.abs(tuning.trim) * 1.5;
-    }
-    if (applyBlur > 0) {
-      tempMaskCtx.filter = `blur(${applyBlur}px)`
-    }
-    
-    tempMaskCtx.drawImage(maskCanvas, 0, 0)
-    const maskData = tempMaskCtx.getImageData(0, 0, width, height)
-    const maskPixels = maskData.data
-
-    const totalPixels = width * height
-    const thresholdVal = tuning.threshold * 255
-    const trimShift = tuning.trim * 20 // scale trim impact
-
-    for (let i = 0; i < totalPixels; i++) {
-      const idx = i * 4
-      let rawAlpha = maskPixels[idx + 3]
-
-      // Trim (Erode/Dilate) via Alpha Level Adjustment
-      if (trimShift > 0) {
-        // Erode: push alpha down, but rescale max back to 255 so the interior remains completely solid
-        rawAlpha = Math.max(0, (rawAlpha - trimShift) * (255 / (255 - trimShift)))
-      } else if (trimShift < 0) {
-        // Dilate: boost alpha to push the edge outwards
-        rawAlpha = Math.min(255, rawAlpha - trimShift)
-      }
-
-      // Apply Threshold (Smooth Step)
-      let finalAlpha = 0
-      if (rawAlpha >= thresholdVal) {
-        const range = 255 - thresholdVal
-        finalAlpha = range > 0 ? Math.min(255, Math.round(((rawAlpha - thresholdVal) / range) * 255)) : 255
-      } else {
-        finalAlpha = 0
-      }
-
-      imgPixels[idx + 3] = finalAlpha
-
-      // De-fringe color halo
-      if (tuning.deFringe && finalAlpha > 0 && finalAlpha < 240) {
-        const r = imgPixels[idx]
-        const g = imgPixels[idx + 1]
-        const b = imgPixels[idx + 2]
-        const avg = (r + g + b) / 3
-        imgPixels[idx] = Math.round(r * 0.85 + avg * 0.15)
-        imgPixels[idx + 1] = Math.round(g * 0.85 + avg * 0.15)
-        imgPixels[idx + 2] = Math.round(b * 0.85 + avg * 0.15)
-      }
-    }
-
-    ctx.putImageData(imgData, 0, 0)
-
-    canvas.toBlob((blob) => {
-      if (blob) {
-        resultBlob.value = blob
-        if (resultUrl.value) URL.revokeObjectURL(resultUrl.value)
-        resultUrl.value = URL.createObjectURL(blob)
-      }
-    }, 'image/png')
-  }
-
-  if (immediateBlob) {
-    runHeavyExport()
-  } else {
-    recompositeDebounceTimer = setTimeout(runHeavyExport, 120)
-  }
-}
+// The compositing engine (fast GPU preview, debounced full-quality export) now
+// lives in src/composables/useCompositor.ts.
 
 // The contour-outline renderer now lives in src/composables/useOutlineOverlay.ts
 
