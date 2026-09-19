@@ -57,6 +57,8 @@ import { useModelCache } from './composables/useModelCache.js'
 import { useProcessing } from './composables/useProcessing.js'
 import ProcessingOverlay from './components/ProcessingOverlay.vue'
 import UploadHero from './components/UploadHero.vue'
+import ModelChangePrompt from './components/ModelChangePrompt.vue'
+import ReplaceImagePrompt from './components/ReplaceImagePrompt.vue'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -1135,119 +1137,24 @@ onUnmounted(() => {
     </main>
 
     <!-- Model Change Confirmation Prompt Modal -->
-    <Teleport to="body">
-      <div v-if="showModelChangePrompt" class="prompt-modal-overlay" @click.self="cancelModelRerun">
-        <div class="prompt-modal-card">
-          <!-- Header -->
-          <div class="prompt-modal-header">
-            <div class="prompt-modal-title-wrap">
-              <div class="prompt-icon-badge">
-                <RefreshCw :size="15" />
-              </div>
-              <h2 class="prompt-modal-title">Switch AI Model?</h2>
-            </div>
-            <button class="prompt-btn-close" @click="cancelModelRerun" title="Cancel">✕</button>
-          </div>
-
-          <!-- Body -->
-          <div class="prompt-modal-body">
-            <p class="prompt-modal-message">
-              Rerun the process using
-              <span class="prompt-model-tag">{{ (modelOptions.find(m => m.id === pendingModelId) || {}).name || pendingModelId }}</span>?
-            </p>
-
-            <!-- One-liner Checkbox -->
-            <label class="prompt-checkbox-row">
-              <input
-                type="checkbox"
-                v-model="dontAskModelChangeAgain"
-                class="prompt-checkbox"
-              />
-              <span class="prompt-checkbox-text">Don't show this prompt again</span>
-            </label>
-
-            <!-- Yellow Hint when ticked -->
-            <transition name="fade-hint">
-              <div v-if="dontAskModelChangeAgain" class="prompt-settings-hint">
-                <Settings :size="13" class="hint-settings-icon" />
-                <span>Can be adjusted in Settings <Settings :size="11" class="inline-settings-icon" /></span>
-              </div>
-            </transition>
-          </div>
-
-          <!-- Footer -->
-          <div class="prompt-modal-footer">
-            <button class="prompt-btn-cancel" @click="cancelModelRerun">No</button>
-            <button class="prompt-btn-confirm" @click="confirmModelRerun">
-              <RefreshCw :size="12" />
-              <span>Yes, Re-run</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <ModelChangePrompt
+      :show="showModelChangePrompt"
+      :pending-model-id="pendingModelId"
+      :dont-ask-model-change-again="dontAskModelChangeAgain"
+      @update:dont-ask-model-change-again="dontAskModelChangeAgain = $event"
+      @close="cancelModelRerun"
+      @confirm="confirmModelRerun"
+    />
 
     <!-- Paste / Replace Image Confirmation Prompt Modal -->
-    <Teleport to="body">
-      <div v-if="showReplaceImagePrompt" class="prompt-modal-overlay" @click.self="cancelReplaceImage">
-        <div class="prompt-modal-card">
-          <!-- Header -->
-          <div class="prompt-modal-header">
-            <div class="prompt-modal-title-wrap">
-              <div class="prompt-icon-badge">
-                <ImageIcon :size="15" />
-              </div>
-              <h2 class="prompt-modal-title">Replace Current Image?</h2>
-            </div>
-            <button class="prompt-btn-close" @click="cancelReplaceImage" title="Cancel">✕</button>
-          </div>
-
-          <!-- Body -->
-          <div class="prompt-modal-body">
-            <p class="prompt-modal-message">
-              You pasted a new image. Would you like to discard the current workspace and process this image?
-            </p>
-
-            <!-- Thumbnail & Model Info Card -->
-            <div class="pasted-preview-card">
-              <!-- Top Row: Thumbnail + Model Box (Name & Size inside same box) -->
-              <div class="pasted-top-row">
-                <div class="pasted-thumb-box">
-                  <img :src="pendingNewImageThumbnail" alt="Pasted Thumbnail" class="pasted-thumb-img" />
-                </div>
-                <div class="pasted-model-box">
-                  <div class="pasted-meta-title">Selected AI Model</div>
-                  <div class="pasted-model-card">
-                    <div class="pasted-model-name-line">
-                      <Sparkles :size="13" class="text-indigo-400" />
-                      <span class="pasted-model-name-text">{{ currentModelMeta.name }}</span>
-                    </div>
-                    <div class="pasted-model-size-line">
-                      Size: {{ currentModelMeta.size }}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Bottom Row: Filename spanning long under both picture and model box -->
-              <div v-if="pendingNewImageFile" class="pasted-filename-row" :title="`Filename: ${pendingNewImageFile.name || 'clipboard_image.png'}`">
-                <span class="pasted-filename-label">Filename:</span>
-                <span class="pasted-filename-val">{{ pendingNewImageFile.name || 'clipboard_image.png' }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Footer -->
-          <div class="prompt-modal-footer">
-            <button class="prompt-btn-cancel" @click="cancelReplaceImage">Cancel</button>
-            <button class="prompt-btn-confirm" @click="confirmReplaceImage">
-              <Sparkles :size="12" />
-              <span>Replace & Process</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <ReplaceImagePrompt
+      :show="showReplaceImagePrompt"
+      :pending-new-image-thumbnail="pendingNewImageThumbnail"
+      :pending-new-image-file="pendingNewImageFile"
+      :current-model-meta="currentModelMeta"
+      @close="cancelReplaceImage"
+      @confirm="confirmReplaceImage"
+    />
 
     <!-- Version / Changelog / Roadmap / Storage Modal -->
     <SettingsModal
