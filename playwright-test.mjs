@@ -2,8 +2,15 @@ import { chromium } from 'playwright';
 import path from 'path';
 import fs from 'fs';
 
-const TEST_IMG = path.resolve('250822-giselle-instagram-update-v0-bjncccekijkf1.jpg');
-const ARTIFACTS_DIR = 'C:/Users/hafiz/.gemini/antigravity/brain/ce814e9f-91e4-44d5-a824-3c185bac0899';
+// Fixture lives in tests/fixtures/ (moved out of the repo root during the AI-context refactor).
+const TEST_IMG = path.resolve('tests/fixtures/giselle-original.jpg');
+// Override with PURECUT_ARTIFACTS_DIR to write artifacts somewhere other than the
+// previous hardcoded Antigravity brain path. Defaults to tests/artifacts/.
+const ARTIFACTS_DIR =
+  process.env.PURECUT_ARTIFACTS_DIR || path.resolve('tests/artifacts');
+
+// tests/artifacts/ is gitignored, so make sure it exists before writing into it.
+fs.mkdirSync(ARTIFACTS_DIR, { recursive: true });
 
 async function runSingleModelTest(modelValue, modelShortName) {
   console.log(`\n========================================`);

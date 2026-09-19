@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite --open --port 5173",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "context:report": "node scripts/context-report.mjs",
+    "context:check": "node scripts/context-report.mjs --check"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

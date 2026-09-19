@@ -1,0 +1,57 @@
+{
+  "workbench.colorCustomizations": {
+    "activityBar.background": "#9B4207",
+    "titleBar.activeBackground": "#D95D0A",
+    "titleBar.activeForeground": "#FFF8F4",
+    "titleBar.inactiveBackground": "#9B4207",
+    "titleBar.inactiveForeground": "#FFF8F4",
+    "statusBar.background": "#9B4207",
+    "statusBar.foreground": "#FFF8F4",
+    "statusBar.debuggingBackground": "#9B4207",
+    "statusBar.debuggingForeground": "#FFF8F4",
+    "statusBar.noFolderBackground": "#9B4207",
+    "statusBar.noFolderForeground": "#FFF8F4"
+  },
+
+  // --- AI context hygiene -------------------------------------------------
+  // Keep generated, minified, binary and baseline artifacts out of search
+  // results so agents do not pull them into their context window.
+  // Rationale: public/coi-serviceworker.js is minified into a single enormous
+  // line, and package-lock.json is ~10x larger than the whole src/ tree.
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.refactor-baseline": true,
+    "**/graphify-out": true,
+    "**/tests/artifacts": true,
+    "**/coverage": true,
+    "package-lock.json": true,
+    "public/coi-serviceworker.js": true,
+    "**/*.png": true,
+    "**/*.jpg": true,
+    "**/*.jpeg": true,
+    "**/*.ico": true,
+    "**/*.webp": true,
+    "**/*.wasm": true,
+    "**/*.onnx": true
+  },
+  "search.followSymlinks": false,
+  "search.useIgnoreFiles": true,
+
+  // Hide build output from the Explorer and quick-open (they are never edited by hand).
+  "files.exclude": {
+    "**/dist": true,
+    "**/.refactor-baseline": true
+  },
+
+  // Reduce watcher load from folders nothing edits.
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/.git/objects/**": true
+  },
+
+  // Ensure repository instruction files (.github/copilot-instructions.md,
+  // AGENTS.md, .github/instructions/*.instructions.md) are picked up.
+  "github.copilot.chat.codeGeneration.useInstructionFiles": true
+}

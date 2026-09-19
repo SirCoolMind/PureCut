@@ -41,7 +41,7 @@ import {
   Type
 } from 'lucide-vue-next'
 import { appVersion, modelOptions } from './constants.js'
-import { detectSubjects, magicWandFloodFill } from './detectionEngine.js'
+import { detectSubjects, magicWandFloodFill, extractMaskContourSegments } from './detectionEngine.js'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -51,7 +51,6 @@ const ShowcaseModal = defineAsyncComponent(() => import('./components/ShowcaseMo
 // --- State ---
 const showBenchmarkPage = ref(false)
 const originalUrl = ref(null)
-const originalImageEl = ref(null)
 const resultUrl = ref(null)
 const resultBlob = ref(null)
 
@@ -98,7 +97,6 @@ const activeTool = ref('slider') // 'slider' | 'brush' | 'select' | 'pan'
 const brushMode = ref('erase') // 'erase' | 'restore'
 const brushSize = ref(35)
 const isDrawing = ref(false)
-const brushCanvasRef = ref(null)
 const displayCanvasRef = ref(null) // Live GPU-composited preview canvas
 const selectionCanvasRef = ref(null) // Dotted marching ants selection overlay
 let rAFPending = false // requestAnimationFrame batching flag
@@ -427,9 +425,9 @@ async function processImage(file) {
     img.onload = () => {
       imageDimensions.width = img.naturalWidth
       imageDimensions.height = img.naturalHeight
-      originalImageEl.value = img
       resolve(true)
     }
+
     img.src = originalUrl.value
   })
 
@@ -718,7 +716,6 @@ function recompositeCanvas(immediateBlob = false) {
 // Global Outline Rendering Engine
 let globalOutlineAnimationId = null
 let outlineDashOffset = 0
-import { extractMaskContourSegments } from './detectionEngine.js'
 
 function toggleOutline() {
   showOutline.value = !showOutline.value
@@ -1411,7 +1408,6 @@ async function copyToClipboard() {
 
 function reset() {
   originalUrl.value = null
-  originalImageEl.value = null
   resultUrl.value = null
   resultBlob.value = null
   currentFileBlob.value = null
