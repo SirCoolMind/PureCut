@@ -44,6 +44,8 @@ import { appVersion, modelOptions } from './constants.js'
 import { detectSubjects, magicWandFloodFill, extractMaskContourSegments } from './detectionEngine.js'
 import { STORAGE_KEYS, cachedModelKey } from './core/storageKeys.js'
 import { useDisplayScale } from './composables/useDisplayScale.js'
+import { useWorkspaceUi } from './composables/useWorkspaceUi.js'
+import { useZoomPan } from './composables/useZoomPan.js'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -94,8 +96,7 @@ const cachedModels = reactive(
 const showSettingsModal = ref(false)
 
 // UI Modes & Tools
-const userMode = ref('standard') // 'standard' | 'power'
-const activeTool = ref('slider') // 'slider' | 'brush' | 'select' | 'pan'
+const { userMode, activeTool, sliderPosition, previewBg, copied } = useWorkspaceUi()
 const brushMode = ref('erase') // 'erase' | 'restore'
 const brushSize = ref(35)
 const isDrawing = ref(false)
@@ -119,76 +120,21 @@ const detectedSubjects = ref([])
 const showOutline = ref(false)
 const showSubjectsDrawer = ref(false)
 
-// Zoom & Pan System
-const zoomLevel = ref(1) // 1 = 100%
-const panOffset = reactive({ x: 0, y: 0 })
-const isPanning = ref(false)
-let panStartPoint = { x: 0, y: 0 }
-let initialPan = { x: 0, y: 0 }
-
+// Zoom & pan for the viewport. See useZoomPan.
 const redoHistory = ref([])
 
-function zoomIn() {
-  zoomLevel.value = Math.min(4, +(zoomLevel.value + 0.25).toFixed(2))
-}
-
-function zoomOut() {
-  zoomLevel.value = Math.max(0.5, +(zoomLevel.value - 0.25).toFixed(2))
-  if (zoomLevel.value <= 1 && panOffset.x === 0 && panOffset.y === 0) {
-    resetZoom()
-  }
-}
-
-function resetZoom() {
-  zoomLevel.value = 1
-  panOffset.x = 0
-  panOffset.y = 0
-}
-
-function onWheelZoom(e) {
-  if (!resultUrl.value) return
-  e.preventDefault()
-
-  // Zoom: Ctrl + Alt + Scroll (e.ctrlKey && e.altKey)
-  if (e.ctrlKey && e.altKey) {
-    const delta = e.deltaY > 0 ? -0.15 : 0.15
-    const newZoom = Math.min(4, Math.max(0.5, +(zoomLevel.value + delta).toFixed(2)))
-    zoomLevel.value = newZoom
-    if (newZoom === 1) {
-      panOffset.x = 0
-      panOffset.y = 0
-    }
-  } 
-  // Pan X: Ctrl + Scroll
-  else if (e.ctrlKey || e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-    const dx = e.deltaX !== 0 ? e.deltaX : (e.deltaY !== 0 ? e.deltaY : 0)
-    panOffset.x -= dx
-  }
-  // Pan Y: Standard Scroll
-  else {
-    panOffset.y -= e.deltaY
-  }
-}
-
-function onPanStart(e) {
-  if (activeTool.value !== 'pan') return
-  isPanning.value = true
-  e.currentTarget.setPointerCapture(e.pointerId)
-  panStartPoint = { x: e.clientX, y: e.clientY }
-  initialPan = { x: panOffset.x, y: panOffset.y }
-}
-
-function onPanMove(e) {
-  if (!isPanning.value) return
-  const dx = e.clientX - panStartPoint.x
-  const dy = e.clientY - panStartPoint.y
-  panOffset.x = initialPan.x + dx
-  panOffset.y = initialPan.y + dy
-}
-
-function onPanEnd() {
-  isPanning.value = false
-}
+const {
+  zoomLevel,
+  panOffset,
+  isPanning,
+  zoomIn,
+  zoomOut,
+  resetZoom,
+  onWheelZoom,
+  onPanStart,
+  onPanMove,
+  onPanEnd
+} = useZoomPan({ resultUrl, activeTool })
 
 // Display scaling: font size (persisted) and browser zoom. See useDisplayScale.
 const {
@@ -201,9 +147,6 @@ const {
   resetBrowserZoom
 } = useDisplayScale()
 
-const sliderPosition = ref(50)
-const previewBg = ref('checkerboard') // 'checkerboard', 'white', 'black', 'gradient'
-const copied = ref(false)
 const fileInput = ref(null)
 const currentFileBlob = ref(null)
 
