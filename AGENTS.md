@@ -157,8 +157,10 @@ still a rule).
   (`schedulePreview`) and defer non-critical analysis (`detectSubjects` is
   already deferred with `setTimeout`).
 - Do not add `console.log` noise; the browser console is used for real errors.
-- Respect the size budget: no source file over 450 lines. Run
-  `npm run context:report` before and after a large change.
+- Respect the size budget: no file over 450 lines, except `src/App.vue`, which
+  carries its own 600-line budget (`targetAppVueLines`). Run
+  `npm run context:report` before and after a large change; `npm run
+  context:check` is the gate and should exit 0.
 
 ## Known issues — report, do not silently fix
 

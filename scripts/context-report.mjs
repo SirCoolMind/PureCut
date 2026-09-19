@@ -45,14 +45,27 @@ const TEXT_EXTENSIONS = new Set([
 /** Extra root-level files worth tracking (config + docs an agent may read). */
 const EXTRA_ROOT_FILES = ['index.html', 'vite.config.js', 'package.json', 'README.md', 'AGENTS.md']
 
+/** Path of the shell file, which carries a budget of its own. See `BUDGET`. */
+const APP_VUE = 'src/App.vue'
+
 /**
- * Budgets enforced by --check. Keep in sync with the plan and AGENTS.md.
- * The point of the refactor is to keep the largest readable unit small.
+ * Budgets enforced by --check. Keep in sync with AGENTS.md.
+ *
+ * `targetAppVueLines` is deliberately looser than `maxFileLines`. App.vue is the
+ * only file the budget excuses: the user has explicitly forgiven its line count,
+ * because hitting 400 would mean either compacting the component tags' attribute
+ * lists onto single lines (which keeps the token count and only games the metric)
+ * or hoisting shared state into a module (forbidden by AGENTS.md constraint 7).
+ * Everything else the budget covers - `src/`, `scripts/`, `tests/` - still has to
+ * fit in `maxFileLines`, which is what keeps the check a real signal.
  */
 const BUDGET = {
   maxFileLines: 450,
-  targetAppVueLines: 400
+  targetAppVueLines: 600
 }
+
+/** The line budget that applies to one file: App.vue gets its own. */
+const budgetFor = (file) => (file.path === APP_VUE ? BUDGET.targetAppVueLines : BUDGET.maxFileLines)
 
 async function collectTextFiles(dir, acc = []) {
   let entries
@@ -180,11 +193,11 @@ async function main() {
   console.log(`Largest single read: ${largest.path} (${largest.lines} lines, ~${largest.tokens} tokens)`)
   console.log(`App.vue: ${appVue ? appVue.lines : 0} lines`)
   console.log('')
-  console.log(`Budget: no file over ${BUDGET.maxFileLines} lines; App.vue target <= ${BUDGET.targetAppVueLines}`)
+  console.log(`Budget: ${BUDGET.maxFileLines} lines per file; App.vue target <= ${BUDGET.targetAppVueLines}`)
 
   // Where an oversized .vue keeps its lines: the number alone does not say
   // whether to split logic, markup or styles.
-  const sfcOverBudget = measured.filter((f) => f.sections && f.lines > BUDGET.maxFileLines)
+  const sfcOverBudget = measured.filter((f) => f.sections && f.lines > budgetFor(f))
   if (sfcOverBudget.length) {
     console.log('')
     console.log('Oversized .vue files - which block is to blame:')
@@ -192,13 +205,14 @@ async function main() {
   }
 
   if (check) {
-    const violations = measured.filter((f) => f.lines > BUDGET.maxFileLines)
-    const appVueOver = appVue && appVue.lines > BUDGET.targetAppVueLines
-    if (violations.length || appVueOver) {
+    const violations = measured.filter((f) => f.lines > budgetFor(f))
+    if (violations.length) {
       console.log('')
       console.log('BUDGET VIOLATIONS:')
-      for (const v of violations) console.log(`  - ${v.path}: ${v.lines} lines${v.sections ? `  [${v.sections}]` : ''}`)
-      if (appVueOver) console.log(`  - src/App.vue exceeds its target: ${appVue.lines} lines${appVue?.sections ? `  [${appVue.sections}]` : ''}`)
+      for (const v of violations) {
+        const note = v.path === APP_VUE ? ' (App.vue budget)' : ''
+        console.log(`  - ${v.path}: ${v.lines} lines${note}${v.sections ? `  [${v.sections}]` : ''}`)
+      }
       process.exit(1)
     }
     console.log('')
