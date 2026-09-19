@@ -87,6 +87,31 @@ async function shoot(page, name) {
   await page.screenshot({ path: path.join(ARTIFACTS, `${name}.png`), fullPage: false })
 }
 
+/** Visible label of each tool in the stage tool switcher. */
+const TOOL_LABELS = { slider: 'Compare', brush: 'Magic Brush', select: 'Select', pan: 'Pan' }
+
+/** Click a tool in the stage tool switcher and let the viewport settle. */
+async function selectTool(page, tool) {
+  await page.locator(`.tool-btn:has-text("${TOOL_LABELS[tool]}")`).first().click()
+  await page.waitForTimeout(350)
+}
+
+/**
+ * Read the three power-user tuning sliders and the de-fringe toggle.
+ *
+ * Those controls only exist in Power User mode, so this flips the mode switch
+ * twice and always leaves the app back in Standard mode.
+ */
+async function readTuning(page) {
+  await page.locator('.mode-btn:has-text("Power User")').click()
+  await page.waitForTimeout(250)
+  const values = await page.locator('.tune-slider').evaluateAll((els) => els.map((el) => el.value))
+  const deFringe = (await page.locator('.toggle-pill').innerText()).trim()
+  await page.locator('.mode-btn:has-text("Standard")').click()
+  await page.waitForTimeout(250)
+  return { values, deFringe }
+}
+
 async function main() {
   fs.mkdirSync(ARTIFACTS, { recursive: true })
   console.log(`PureCut regression harness\n  target: ${BASE_URL}\n  artifacts: ${ARTIFACTS}\n`)
@@ -239,10 +264,18 @@ async function main() {
         ['slider', '.slider-divider']
       ]
       for (const [tool, surface] of tools) {
-        await page.locator(`.tool-btn:has-text("${tool === 'slider' ? 'Compare' : tool === 'brush' ? 'Magic Brush' : tool === 'select' ? 'Select' : 'Pan'}")`).first().click()
-        await page.waitForTimeout(350)
-        const ok = (await page.locator(surface).count()) > 0
-        check(`${tool} tool shows ${surface}`, ok)
+        await selectTool(page, tool)
+        check(`${tool} tool shows ${surface}`, (await page.locator(surface).count()) > 0)
+        // The surface appearing only proves half of it: if `activeTool` stops
+        // reaching the switcher, the old button stays highlighted while the new
+        // surface renders. Assert exactly one button is marked, and that it is
+        // the one that was just clicked.
+        const active = (await page.locator('.tool-btn.active').allInnerTexts()).map((t) => t.trim())
+        check(
+          `${tool} tool is the only active tool`,
+          active.length === 1 && active[0].includes(TOOL_LABELS[tool]),
+          `active buttons: ${JSON.stringify(active)}`
+        )
         await shoot(page, `06-tool-${tool}`)
       }
 
@@ -256,6 +289,50 @@ async function main() {
         check(`backdrop ${bg} applied`, cls.includes(`bg-${bg}`), `class was "${cls}"`)
       }
 
+      // ------------------------------------------------------- mask mutation
+      // The suite's original weakness: nearly every control was asserted to be
+      // *rendered* and left unclicked, so handlers that threw stayed invisible.
+      // A brush stroke is the cheapest way to drive the mask canvas through the
+      // whole pipeline, and it has two observable consequences: Undo becomes
+      // available (`undoHistory.length` grows) and the cutout gets re-encoded
+      // (the export blob and its object URL are replaced).
+      if (hasResult) {
+        console.log('\nMask mutation (brush stroke)')
+        await selectTool(page, 'slider')
+        const srcBefore = await page.locator('.result-img').getAttribute('src')
+        await selectTool(page, 'brush')
+        const surface = page.locator('.brush-interaction-surface')
+        const strokeArea = await surface.boundingBox()
+        if (strokeArea) {
+          await page.mouse.move(strokeArea.x + strokeArea.width * 0.4, strokeArea.y + strokeArea.height * 0.4)
+          await page.mouse.down()
+          await page.mouse.move(strokeArea.x + strokeArea.width * 0.5, strokeArea.y + strokeArea.height * 0.5, { steps: 8 })
+          await page.mouse.move(strokeArea.x + strokeArea.width * 0.6, strokeArea.y + strokeArea.height * 0.6, { steps: 8 })
+          await page.mouse.up()
+        } else {
+          check('brush interaction surface has a layout box', false, 'no bounding box')
+        }
+        // Pointer up triggers the debounced full-quality recomposite (~120 ms)
+        // plus PNG encoding.
+        await page.waitForTimeout(1500)
+        check(
+          'brush stroke enabled Undo',
+          !(await page.locator('.btn-mini:has-text("Undo")').isDisabled()),
+          'Undo still disabled after a stroke'
+        )
+        await selectTool(page, 'slider')
+        const srcAfter = await page.locator('.result-img').getAttribute('src')
+        check(
+          'brush stroke re-encoded the cutout',
+          !!srcAfter && srcAfter !== srcBefore,
+          `result src unchanged (${srcAfter})`
+        )
+        await shoot(page, '08-after-brush-stroke')
+      } else {
+        skip('brush stroke enabled Undo', 'no cutout to paint on (model weights unavailable)')
+        skip('brush stroke re-encoded the cutout', 'no cutout to paint on (model weights unavailable)')
+      }
+
       // Power user sliders
       console.log('\nSidebar / power user mode')
       await page.locator('.mode-btn:has-text("Power User")').click()
@@ -265,6 +342,50 @@ async function main() {
       await page.locator('.mode-btn:has-text("Standard")').click()
       await page.waitForTimeout(300)
       check('preset cards revealed', (await page.locator('.preset-card').count()) === 4)
+
+      // A preset is only useful if it writes through to the tuning sliders, and
+      // the cards are Standard-mode-only while the sliders are Power-mode-only.
+      // Apply each card, flip to Power User, read the three range inputs back,
+      // and compare against the values applyPreset() promises.
+      console.log('\nPresets write through to the power sliders')
+      const PRESETS = [
+        ['Fine Hair & Fur', ['0.4', '2', '-1'], 'Off'],
+        ['Clean Product', ['0.6', '0', '1'], 'Active'],
+        ['Deep / Cluttered BG', ['0.75', '0', '2'], 'Active'],
+        ['Balanced', ['0.5', '1', '0'], 'Active']
+      ]
+      for (const [label, expected, deFringe] of PRESETS) {
+        await page.locator(`.preset-card:has-text("${label}")`).click()
+        await page.waitForTimeout(500)
+        const activeCard = (await page.locator('.preset-card.active').innerText()).trim()
+        check(
+          `preset "${label}" marked active`,
+          activeCard.includes(label),
+          `active card was "${activeCard}"`
+        )
+        const applied = await readTuning(page)
+        check(
+          `preset "${label}" sets threshold/feather/trim`,
+          JSON.stringify(applied.values) === JSON.stringify(expected),
+          `expected ${JSON.stringify(expected)}, got ${JSON.stringify(applied.values)}`
+        )
+        check(
+          `preset "${label}" sets de-fringe to ${deFringe}`,
+          applied.deFringe === deFringe,
+          `got "${applied.deFringe}"`
+        )
+      }
+      // No preset may leave the tuning untouched, otherwise the checks above
+      // would pass on a stale read rather than a real write.
+      const balanced = await readTuning(page)
+      await page.locator('.preset-card:has-text("Clean Product")').click()
+      await page.waitForTimeout(500)
+      const product = await readTuning(page)
+      check(
+        'applying a preset moves the sliders',
+        JSON.stringify(product.values) !== JSON.stringify(balanced.values),
+        `sliders did not move (${JSON.stringify(product.values)})`
+      )
 
       // Zoom controls
       await page.locator('.zoom-btn').first().click()
@@ -279,7 +400,19 @@ async function main() {
       } else {
         skip('download anchor rendered', 'no result blob to download')
       }
-      check('new photo button rendered', (await page.locator('.btn-secondary:has-text("New Photo")').count()) > 0)
+      const newPhoto = page.locator('.btn-secondary:has-text("New Photo")')
+      check('new photo button rendered', (await newPhoto.count()) > 0)
+
+      // The regression that actually shipped: `reset()` was covered only by a
+      // "button is rendered" assertion, so the ReferenceError it threw on click
+      // was never seen. Click it and assert the app really returns to the hero.
+      console.log('\nNew Photo resets the workspace')
+      await newPhoto.click()
+      await page.waitForTimeout(900)
+      check('New Photo returns to the upload hero', (await page.locator('.hero-section').count()) === 1, 'hero not rendered')
+      check('New Photo unmounts the studio', (await page.locator('.studio-workspace').count()) === 0, 'studio still rendered')
+      check('New Photo clears the cutout', (await page.locator('.result-img').count()) === 0, 'cutout still rendered')
+      await shoot(page, '09-after-reset')
     }
   }
 
