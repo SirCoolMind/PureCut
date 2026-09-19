@@ -41,7 +41,7 @@ import {
   Type
 } from 'lucide-vue-next'
 import { appVersion, modelOptions } from './constants.js'
-import { detectSubjects, magicWandFloodFill } from './detectionEngine.js'
+import { detectSubjects } from './detectionEngine.js'
 import { STORAGE_KEYS, cachedModelKey } from './core/storageKeys.js'
 // Canvas handles are live module bindings, not refs - see src/core/canvasStore.ts.
 // They are read directly (keeping the old call sites intact) and replaced through
@@ -67,6 +67,7 @@ import { useOutlineOverlay } from './composables/useOutlineOverlay.js'
 import { useSubjects } from './composables/useSubjects.js'
 import { useBrush } from './composables/useBrush.js'
 import { useSelectionOverlay } from './composables/useSelectionOverlay.js'
+import { useSelectionTools } from './composables/useSelectionTools.js'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -194,6 +195,27 @@ const { startAntsAnimation, stopAntsAnimation } =
     zoomLevel,
     activeTool,
     hasSelection
+  })
+
+// Selection tools: magnetic lasso, freehand lasso, rect, polygon, magic wand.
+// See useSelectionTools - it shares the selection state above with the overlay.
+const { onSelectPointerDown, onSelectPointerMove, onSelectPointerUp, clearSelection, applySelectionAction } =
+  useSelectionTools({
+    imageDimensions,
+    activeTool,
+    zoomLevel,
+    getCanvasCoords,
+    startAntsAnimation,
+    stopAntsAnimation,
+    saveUndoState,
+    recompositeCanvas,
+    refreshDetectionData,
+    selectShape,
+    isSelecting,
+    selectionBox,
+    lassoPoints,
+    activeSelection,
+    wandTolerance
   })
 
 // Tuning Parameters
@@ -726,253 +748,8 @@ function getCanvasCoords(e) {
 // The marching-ants overlay renderer now lives in
 // src/composables/useSelectionOverlay.ts.
 
-// Edge-detection snapping function for Magnetic Lasso
-function findNearestObjectEdge(x, y, searchRadius = 18) {
-  if (!maskCtx) return { x, y }
-  const w = imageDimensions.width
-  const h = imageDimensions.height
-
-  // Sample a local bounding patch around (x, y)
-  const x0 = Math.max(0, Math.floor(x - searchRadius))
-  const y0 = Math.max(0, Math.floor(y - searchRadius))
-  const x1 = Math.min(w - 1, Math.ceil(x + searchRadius))
-  const y1 = Math.min(h - 1, Math.ceil(y + searchRadius))
-  const patchW = x1 - x0 + 1
-  const patchH = y1 - y0 + 1
-  if (patchW <= 2 || patchH <= 2) return { x, y }
-
-  const patch = maskCtx.getImageData(x0, y0, patchW, patchH).data
-
-  let bestX = x
-  let bestY = y
-  let maxScore = -1
-
-  // Scan pixels in the patch to find high-gradient mask transitions (alpha ~ 128 or sharp delta)
-  const step = 2 // sample every 2px for high performance
-  for (let py = 1; py < patchH - 1; py += step) {
-    for (let px = 1; px < patchW - 1; px += step) {
-      const idx = (py * patchW + px) * 4 + 3 // alpha channel of mask
-      const a = patch[idx]
-
-      // Alpha gradient magnitude (Sobel / central differences)
-      const aRight = patch[(py * patchW + (px + 1)) * 4 + 3]
-      const aLeft = patch[(py * patchW + (px - 1)) * 4 + 3]
-      const aDown = patch[((py + 1) * patchW + px) * 4 + 3]
-      const aUp = patch[((py - 1) * patchW + px) * 4 + 3]
-
-      const gx = Math.abs(aRight - aLeft)
-      const gy = Math.abs(aDown - aUp)
-      const gradient = gx + gy
-
-      // Transition score: combination of edge gradient and distance to cursor
-      if (gradient > 25) {
-        const curPxX = x0 + px
-        const curPxY = y0 + py
-        const dist = Math.hypot(curPxX - x, curPxY - y)
-        // Score favors strong gradients closer to the cursor
-        const score = gradient / (1 + dist * 0.7)
-        if (score > maxScore) {
-          maxScore = score
-          bestX = curPxX
-          bestY = curPxY
-        }
-      }
-    }
-  }
-
-  return { x: bestX, y: bestY }
-}
-
-// Selection Pointer Handlers
-function onSelectPointerDown(e) {
-  if (activeTool.value !== 'select') return
-  e.currentTarget.setPointerCapture(e.pointerId)
-  let coords = getCanvasCoords(e)
-
-  if (selectShape.value === 'wand') {
-    // Magic wand click: instantaneous flood fill
-    const result = magicWandFloodFill(originalCanvas, coords.x, coords.y, wandTolerance.value)
-    if (result) {
-      activeSelection.value = result
-      startAntsAnimation()
-    } else {
-      clearSelection()
-    }
-    return
-  }
-
-  isSelecting.value = true
-  
-  if (selectShape.value === 'polygon') {
-    // Click-to-add vertex polygon logic
-    if (lassoPoints.value.length === 0) {
-      lassoPoints.value = [coords]
-      startAntsAnimation()
-    } else {
-      const first = lassoPoints.value[0]
-      const dist = Math.hypot(coords.x - first.x, coords.y - first.y)
-      // Close polygon if clicked near the start point
-      if (dist < 25 / zoomLevel.value && lassoPoints.value.length > 2) {
-        activeSelection.value = { type: 'lasso', points: [...lassoPoints.value] }
-        isSelecting.value = false
-      } else {
-        lassoPoints.value.push(coords)
-      }
-    }
-    return
-  }
-
-  if (selectShape.value === 'rect') {
-    selectionBox.startX = coords.x
-    selectionBox.startY = coords.y
-    selectionBox.currentX = coords.x
-    selectionBox.currentY = coords.y
-    activeSelection.value = null
-  } else {
-    if (selectShape.value === 'magnetic') {
-      coords = findNearestObjectEdge(coords.x, coords.y, 24)
-    }
-    lassoPoints.value = [coords]
-    activeSelection.value = null
-  }
-  startAntsAnimation()
-}
-
-function onSelectPointerMove(e) {
-  if (!isSelecting.value) return
-  let coords = getCanvasCoords(e)
-
-  if (selectShape.value === 'polygon') {
-    // Live preview to cursor is handled by the render overlay
-    selectionBox.currentX = coords.x
-    selectionBox.currentY = coords.y
-    return
-  }
-
-  if (selectShape.value === 'rect') {
-    selectionBox.currentX = coords.x
-    selectionBox.currentY = coords.y
-  } else {
-    // If magnetic snapping is active, snap coords to the nearest subject contour
-    if (selectShape.value === 'magnetic') {
-      coords = findNearestObjectEdge(coords.x, coords.y, 22)
-    }
-
-    const pts = lassoPoints.value
-    const last = pts[pts.length - 1]
-    const dist = Math.hypot(coords.x - last.x, coords.y - last.y)
-    if (dist >= (selectShape.value === 'magnetic' ? 4 : 3)) {
-      lassoPoints.value.push(coords)
-    }
-  }
-}
-
-function onSelectPointerUp(e) {
-  if (!isSelecting.value || selectShape.value === 'polygon') return
-  isSelecting.value = false
-
-  if (selectShape.value === 'rect') {
-    const x = Math.min(selectionBox.startX, selectionBox.currentX)
-    const y = Math.min(selectionBox.startY, selectionBox.currentY)
-    const w = Math.abs(selectionBox.currentX - selectionBox.startX)
-    const h = Math.abs(selectionBox.currentY - selectionBox.startY)
-
-    if (w > 5 && h > 5) {
-      activeSelection.value = { type: 'rect', x, y, width: w, height: h }
-    } else {
-      activeSelection.value = null
-      stopAntsAnimation()
-    }
-  } else {
-    if (lassoPoints.value.length > 5) {
-      activeSelection.value = { type: 'lasso', points: [...lassoPoints.value] }
-    } else {
-      activeSelection.value = null
-      stopAntsAnimation()
-    }
-  }
-}
-
-function clearSelection() {
-  activeSelection.value = null
-  lassoPoints.value = []
-  isSelecting.value = false
-  stopAntsAnimation()
-}
-
-function applySelectionAction(action) {
-  // If actively drawing a polygon, auto-close it before applying
-  if (isSelecting.value && selectShape.value === 'polygon' && lassoPoints.value.length > 2) {
-    activeSelection.value = { type: 'lasso', points: [...lassoPoints.value] }
-    isSelecting.value = false
-  }
-
-  if (!activeSelection.value || !maskCtx || !originalCanvas) return
-  const sel = activeSelection.value
-
-  maskCtx.save()
-
-  if (sel.type === 'wand') {
-    // For wand, we apply the precise visited mask mapped back to full resolution
-    const wandScale = sel.scale
-    const wandW = sel.sw
-    const invScale = 1 / wandScale
-
-    maskCtx.beginPath()
-    maskCtx.rect(sel.x, sel.y, sel.width, sel.height)
-    maskCtx.clip() // restrict to bounding box for performance
-
-    // Draw the binary mask block directly
-    if (action === 'erase') {
-      maskCtx.globalCompositeOperation = 'destination-out'
-      maskCtx.fillStyle = 'rgba(0,0,0,1)'
-    } else {
-      maskCtx.globalCompositeOperation = 'source-over'
-      maskCtx.fillStyle = 'rgba(255,255,255,1)'
-    }
-
-    // High performance fill of matching pixels
-    for (let y = 0; y < sel.sh; y++) {
-      for (let x = 0; x < sel.sw; x++) {
-        if (sel.visitedMask[y * wandW + x]) {
-          maskCtx.fillRect(Math.floor(x * invScale), Math.floor(y * invScale), Math.ceil(invScale), Math.ceil(invScale))
-        }
-      }
-    }
-  } else {
-    // Trace the active vector selection path onto the mask
-    maskCtx.beginPath()
-    if (sel.type === 'rect') {
-      maskCtx.rect(sel.x, sel.y, sel.width, sel.height)
-    } else if (sel.type === 'lasso' && sel.points.length > 1) {
-      maskCtx.moveTo(sel.points[0].x, sel.points[0].y)
-      for (let i = 1; i < sel.points.length; i++) {
-        maskCtx.lineTo(sel.points[i].x, sel.points[i].y)
-      }
-      maskCtx.closePath()
-    }
-
-    if (action === 'erase') {
-      // Erase enclosed area cleanly
-      maskCtx.globalCompositeOperation = 'destination-out'
-      maskCtx.fillStyle = 'rgba(0, 0, 0, 1)'
-      maskCtx.fill()
-    } else if (action === 'restore') {
-      // Restore enclosed area directly as visible foreground
-      maskCtx.globalCompositeOperation = 'source-over'
-      maskCtx.fillStyle = 'rgba(255, 255, 255, 1)'
-      maskCtx.fill()
-    }
-  }
-
-  maskCtx.restore()
-
-  // Save undo history and trigger instant re-composite
-  saveUndoState()
-  recompositeCanvas(true)
-  refreshDetectionData()
-  clearSelection()
-}
+// The selection tools (magnetic lasso, lasso, rect, polygon, magic wand) now
+// live in src/composables/useSelectionTools.ts.
 
 // Image intake (picker / drop / paste / copy) and the replace-image prompt now
 // live in src/composables/useImageInput.ts.
