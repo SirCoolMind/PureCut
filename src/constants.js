@@ -3,7 +3,12 @@ export const appVersion = '1.4.0'
 export const modelOptions = [
   { id: 'briaai/RMBG-1.4', name: 'BRIA RMBG-1.4 (SOTA · Recommended)', size: '43 MB', engine: 'transformers', dtype: 'q8', desc: 'State-of-the-art accuracy on difficult clothes, hair, reflections, and complex poses.' },
   { id: 'onnx-community/ISNet-ONNX', name: 'DIS / IS-Net (High-Precision Salient Cutout)', size: '42 MB', engine: 'transformers', dtype: 'q8', desc: 'Dichotomous Image Segmentation model with exceptional boundary definition.' },
-  { id: 'Xenova/modnet', name: 'MODNet (Portrait Matting)', size: '20 MB', engine: 'transformers', dtype: 'q8', desc: 'Trimap-free portrait matting model optimized for fast processing.' }
+  { id: 'Xenova/modnet', name: 'MODNet (Portrait Matting)', size: '20 MB', engine: 'transformers', dtype: 'q8', desc: 'Trimap-free portrait matting model optimized for fast processing.' },
+  // BiRefNet backbones need `forceWasm` (their Pad / GatherND ops break the WebGPU shader
+  // compiler) and a working resolution the browser WASM heap can actually hold. Two bigger
+  // BiRefNet / RMBG-2.0 checkpoints do NOT run in-browser - see "Model catalogue" in
+  // AGENTS.md before changing this list or the downscale ladder in aiEngine.js.
+  { id: 'onnx-community/BiRefNet_512x512-ONNX', name: 'BiRefNet 512 (Highest Quality · CPU Only)', size: '473 MB', engine: 'transformers', dtype: 'fp16', forceWasm: true, desc: 'BiRefNet - the architecture behind BRIA RMBG-2.0 - at a 512px working resolution so it fits the browser WASM heap. Very large download and the slowest option here.' }
 ]
 
 export const changelog = [

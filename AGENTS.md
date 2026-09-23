@@ -108,6 +108,53 @@ layout collapsed, while the regression harness stayed green (it asserts elements
 not layout) and css-parity stayed identical (a scoped rule that matches nothing is
 still a rule).
 
+## Model catalogue — read before adding or resizing a model
+
+`modelOptions` in `src/constants.js` is the single source of truth; `ModelStatusBar`,
+`TuningSidebar`, `InfoStorageTab` and `useModelCache` all read it, so adding a model is
+normally one entry there. Two fields exist for reasons that are not obvious:
+
+- **`forceWasm: true`** pins the model to WASM in `resolveModelDevice()` (`aiEngine.js`).
+  Some graphs use `Pad` / `GatherND` nodes the WebGPU WGSL compiler rejects
+  (`ShaderModule with 'Pad' label is invalid`). The older substring hint (`'BiRefNet'`)
+  still works; prefer the explicit flag.
+- **Working resolution is what decides whether a model fits, not the weight size.**
+  `runTransformersModel` downscales the *source image* (BiRefNet 512, MODNet 768, else
+  1024), but **a model's own `preprocessor_config.json` can override that** and resize the
+  network input back up regardless. This is how a 109 MB checkpoint can still exhaust the
+  32-bit WASM heap.
+
+### RMBG-2.0 does not run in the browser — three checkpoints, three different failures
+
+Recorded so nobody repeats the investigation. All verified against `onnxruntime-web`
+(the browser runtime) on 2026-09-23.
+
+| Checkpoint | Outcome | Cause |
+| --- | --- | --- |
+| `briaai/RMBG-2.0` (+ every mirror / quantization) | fails at **session creation** | `[ShapeInferenceError] Mismatch between number of inferred and declared dimensions. inferred=4 declared=6` |
+| `onnx-community/BiRefNet-ONNX` (467 MB), `BiRefNet_lite-ONNX` (109 MB) | fails at **inference** | `std::bad_alloc` — preprocessor declares `size: {1024, 1024}` |
+| `onnx-community/BiRefNet_512x512-ONNX` (473 MB) | **works** | preprocessor declares `size: {512, 512}` |
+
+- The RMBG-2.0 failure is **a malformed shape declaration in the ONNX export, not a size
+  limit**. Proof: the same bytes load fine under `onnxruntime-node`, and a 467 MB BiRefNet
+  creates a session happily in the web runtime. Every mirror (`kn4666`, `Aero-Ex`,
+  `camenduru`, `yuvraj108c`, `qqceqqq`) is byte-identical — confirmed by LFS hash — so
+  switching repositories cannot help. It needs a re-export from PyTorch.
+  `graphOptimizationLevel: 'disabled'` and `strict_shape_type_inference: '0'` do **not** work
+  around it; the WASM build hardcodes strict shape inference.
+- The `std::bad_alloc` failure is **not** about weights or the source image. Both the full
+  and the *lite* checkpoint declare a 1024×1024 input, so the ViT feature extractor upscales
+  no matter what `aiEngine.js` does. 1024² activations exceed the heap. **Do not raise the
+  `BiRefNet → 512px` ceiling without re-testing in a real browser.**
+- `BiRefNet_512x512-ONNX` is the only BiRefNet worth offering; it is enabled, CPU-only.
+  It is a 473 MB download and the slowest option, so reconsider before shipping it widely.
+
+**Debugging tips:** check `size` in the model's `preprocessor_config.json` *first* when a
+model OOMs. A truncated Hugging Face download surfaces as `protobuf parsing failed`, not an
+OOM — compare the local byte count against the repo's reported size before concluding
+anything. And since the app fetches weights from HF at runtime, you can test a new model id
+by editing `modelOptions` alone, with no local mirroring.
+
 ## Non-obvious constraints — read before editing
 
 1. **Canvas objects are deliberately NOT reactive.** `maskCanvas`, `maskCtx`,

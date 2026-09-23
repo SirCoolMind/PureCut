@@ -1,5 +1,22 @@
 import { pipeline, env, AutoModelForSemanticSegmentation, RawImage } from '@huggingface/transformers';
 import { STORAGE_KEYS } from './core/storageKeys.js';
+import { modelOptions } from './constants.js';
+
+/**
+ * Some ONNX graphs contain ops the WebGPU WGSL shader compiler rejects - notably `Pad`
+ * and `GatherND`, which BiRefNet-style backbones use heavily. Those models must run on
+ * multi-threaded WASM SIMD whatever device was requested, or inference dies with
+ * "ShaderModule with 'Pad' label is invalid".
+ *
+ * A model option can declare this with `forceWasm: true`. Ids without that flag are still
+ * matched by substring, which is how the older BiRefNet checkpoints are caught.
+ */
+const WASM_ONLY_ID_HINTS = ['BiRefNet']
+
+function isWasmOnlyModel(modelId) {
+  if (modelOptions.find((m) => m.id === modelId)?.forceWasm) return true
+  return WASM_ONLY_ID_HINTS.some((hint) => !!modelId && modelId.includes(hint))
+}
 
 // Ensure SegformerForSemanticSegmentation is properly registered for image-segmentation tasks (used by RMBG-1.4 and related checkpoints)
 if (AutoModelForSemanticSegmentation?.MODEL_CLASS_MAPPINGS?.[0]) {
@@ -45,7 +62,7 @@ async function resolveModelDevice(requestedDevice, modelId) {
   // BiRefNet (Swin backbone) contains Pad, ScatterND, and 17 storage buffers which are incompatible
   // with WebGPU WGSL shader compilers in Firefox and Chromium (e.g. "ShaderModule with 'Pad' label is invalid").
   // Always route BiRefNet to multi-threaded WASM SIMD for rock-solid stability and zero shader errors.
-  if (modelId && modelId.includes('BiRefNet')) {
+  if (isWasmOnlyModel(modelId)) {
     return 'wasm';
   }
 
@@ -160,6 +177,10 @@ export async function runTransformersModel(file, modelId, dtype = 'q8', disableO
         // - BiRefNet: 512px (fast, ultra-low memory, zero OOM)
         // - MODNet: 768px (ideal portrait matting scale)
         // - RMBG-1.4: 1024px (handles high resolution easily)
+        //
+        // Note: a model's own preprocessor_config.json can override this and resize the network
+        // input back up regardless of what we do here - which is how a 109 MB checkpoint still
+        // OOMs. See "Model catalogue" in AGENTS.md before touching this ladder.
         const maxDimension = modelId.includes('BiRefNet') ? 512 : (modelId.includes('modnet') ? 768 : 1024);
         if (targetWidth > maxDimension || targetHeight > maxDimension) {
           const scale = maxDimension / Math.max(targetWidth, targetHeight);
