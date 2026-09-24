@@ -9,6 +9,13 @@ dist-ssr/
 .vite/
 *.local
 
+# Environment + secrets. The RMBG-2.0 lab reads HF_TOKEN from .env, and the repo
+# is public - a committed token is a leaked token. Checked BEFORE anything can
+# `git add -A` it. (.gitignore had no env entry until this was added.)
+.env
+.env.*
+!.env.example
+
 # Logs
 logs
 *.log
@@ -34,3 +41,10 @@ Thumbs.db
 # Refactor scaffolding & test output
 .refactor-baseline/
 tests/artifacts/
+
+# RMBG-2.0 local lab (scripts/rmbg2*.mjs). Scratch space: your test images, the
+# generated cutouts, and the multi-hundred-MB checkpoint cache. Never published -
+# the lab is a local CPU tool, not part of the app. The README ships so a fresh
+# clone still knows how to set the lab up.
+rmbg2-lab/*
+!rmbg2-lab/README.md

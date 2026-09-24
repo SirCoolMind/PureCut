@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>PureCut · RMBG-2.0 local lab (dev only)</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root {
+    --bg: #080c14;
+    --panel: #0e1420;
+    --panel-2: #111a28;
+    --line: #1e293b;
+    --text: #f1f5f9;
+    --muted: #8b9bb4;
+    --accent: #5aa9e6;
+    --warn: #f0c274;
+    --danger: #f08a8a;
+    --ok: #7fd8a8;
+  }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .lab { max-width: 1180px; margin: 0 auto; padding: 28px 22px 64px; }
+
+  header.top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  header.top h1 { margin: 0; font-size: 21px; letter-spacing: -0.01em; }
+  .tag {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 3px 9px; border-radius: 99px;
+    background: #3a2a12; color: var(--warn); border: 1px solid #5c4218;
+  }
+  .lead { color: var(--muted); margin: 0 0 22px; max-width: 84ch; }
+  .lead code { background: #131c2b; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 20px;
+  }
+  .panel h2 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
+  .help { color: var(--muted); font-size: 12.5px; margin: 0 0 14px; }
+  .help code { background: #131c2b; padding: 1px 5px; border-radius: 4px; }
+
+  /* ---------- dropzone ---------- */
+  .drop {
+    border: 1.5px dashed #2b3d57;
+    border-radius: 12px;
+    padding: 26px 18px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    background: #0b111c;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); background: #0d1624; }
+  .drop strong { display: block; font-size: 14px; margin-bottom: 4px; }
+  .drop span { color: var(--muted); font-size: 12.5px; }
+  .drop .kbd {
+    display: inline-block; margin-top: 8px; font-size: 11px;
+    background: #131c2b; border: 1px solid #24344c; border-radius: 5px; padding: 2px 7px;
+    color: #b9c7db;
+  }
+
+  /* ---------- file grid ---------- */
+  .files { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; margin-top: 16px; }
+  .file {
+    position: relative; background: var(--panel-2); border: 1px solid #24344c;
+    border-radius: 10px; overflow: hidden; cursor: pointer;
+  }
+  .file.picked { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .file img { width: 100%; height: 84px; object-fit: cover; display: block; background: #0b1120; }
+  .file .name {
+    font-size: 11px; padding: 6px 7px; color: #b9c7db; word-break: break-all;
+    line-height: 1.3; max-height: 46px; overflow: hidden;
+  }
+  .file .tick {
+    position: absolute; top: 6px; left: 6px; width: 18px; height: 18px;
+    border-radius: 5px; background: #0b111c; border: 1px solid #3d5271;
+    display: grid; place-items: center; font-size: 12px; color: var(--accent); font-weight: 700;
+  }
+  .file.picked .tick { background: var(--accent); border-color: var(--accent); color: #06202f; }
+  .file .del {
+    position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; border: 0;
+    border-radius: 5px; background: rgba(8, 12, 20, 0.82); color: #cdd8e6;
+    cursor: pointer; font-size: 13px; line-height: 1; padding: 0;
+  }
+  .file .del:hover { background: #4a1717; color: #fff; }
+
+  /* ---------- controls ---------- */
+  .controls { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  select, button {
+    font: inherit; border-radius: 9px; border: 1px solid #24344c;
+    background: var(--panel-2); color: var(--text); padding: 9px 13px; cursor: pointer;
+  }
+  select { min-width: 290px; }
+  select:disabled { opacity: 0.5; }
+  button.primary { background: #1c3a5c; border-color: #2c5a86; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: #234a72; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.ghost { background: transparent; }
+  button.ghost:hover:not(:disabled) { background: var(--panel-2); }
+  .spacer { flex: 1 1 auto; }
+
+  #log {
+    margin: 0; padding: 14px; max-height: 320px; overflow: auto;
+    background: #0a0f19; border: 1px solid var(--line); border-radius: 10px;
+    font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap; word-break: break-word; color: #b9c7db;
+  }
+  #log .ok { color: var(--ok); }
+  #log .err { color: var(--danger); }
+  #log .dim { color: var(--muted); }
+  #log .warn { color: var(--warn); }
+
+  .note {
+    border-left: 3px solid #2c5a86; background: #0d1622; padding: 12px 14px;
+    border-radius: 0 10px 10px 0; color: #c3d0e2; font-size: 12.5px; margin: 0 0 18px;
+  }
+  .note strong { color: #fff; }
+  .note.warn { border-left-color: #5c4218; background: #1a1408; color: #e8d3ad; }
+  .note code { background: #0a0f19; padding: 1px 5px; border-radius: 4px; }
+
+  .result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  figure { margin: 0; }
+  figure img { width: 100%; border-radius: 10px; display: block; background: #0b1120; }
+  figcaption { font-size: 11px; color: var(--muted); margin-top: 7px; }
+  .card-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 14px; }
+  .card-head h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
+  .pill {
+    font-size: 11px; padding: 3px 9px; border-radius: 99px;
+    background: #1a2434; color: #9fb2cc; border: 1px solid #24344c;
+  }
+  .pill.warn { background: #3a2a12; color: var(--warn); border-color: #5c4218; }
+  .pill.bad { background: #3a1414; color: var(--danger); border-color: #5c1818; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px 20px; margin: 16px 0 0; }
+  .stats div { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+  .stats dt { color: var(--muted); }
+  .stats dd { margin: 0; font-variant-numeric: tabular-nums; }
+  dl { margin: 0; }
+  .fail-msg {
+    background: #160c0c; border: 1px solid #4c1d1d; border-radius: 9px;
+    padding: 12px; color: var(--danger); white-space: pre-wrap; font-size: 12px; margin: 0;
+  }
+  .empty { color: var(--muted); font-size: 12.5px; }
+  .busy { display: inline-block; width: 11px; height: 11px; border-radius: 50%;
+          border: 2px solid #2c5a86; border-top-color: transparent; animation: spin 0.7s linear infinite;
+          vertical-align: -1px; margin-right: 7px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="lab">
+  <header class="top">
+    <h1>PureCut &times; Bria RMBG-2.0</h1>
+    <span class="tag">dev only</span>
+  </header>
+
+  <p class="lead">
+    Upload images, choose a checkpoint, and run the real RMBG-2.0 on your machine.
+    This route exists only while <code>npm run dev</code> (or <code>npm run rmbg2:lab</code>)
+    is running &mdash; it is not in the production build, and it only answers requests from
+    this computer.
+  </p>
+
+  <div class="note">
+    <strong>Why is this a local page and not the app itself?</strong>
+    RMBG-2.0 cannot load in a browser tab. Its ONNX export fails at session creation in
+    <code>onnxruntime-web</code> (<code>ShapeInferenceError: inferred=4 declared=6</code>), and the
+    WASM build hardcodes strict shape inference, so no setting works around it. The same file
+    loads fine under <code>onnxruntime-node</code> &mdash; which is what this page drives through a
+    local child process. The PureCut studio still ships only browser-capable models.
+  </div>
+
+  <!-- ============ 1. IMAGES ============ -->
+  <section class="panel">
+    <h2>1 · Images</h2>
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Upload images">
+      <strong>Drop images here, or click to choose</strong>
+      <span>PNG, JPG, WebP, AVIF, TIFF or BMP &middot; up to 40 MB each</span>
+      <div class="kbd">or paste from the clipboard with Ctrl+V</div>
+    </div>
+    <input type="file" id="picker" accept="image/*" multiple hidden>
+    <div class="files" id="files"></div>
+    <p class="help" id="fileInfo" style="margin:14px 0 0"></p>
+  </section>
+
+  <!-- ============ 2. SETTINGS ============ -->
+  <section class="panel">
+    <h2>2 · Model &amp; hardware</h2>
+    <div class="controls">
+      <div class="field">
+        <label for="checkpoint">Checkpoint</label>
+        <select id="checkpoint"></select>
+      </div>
+      <div class="field">
+        <label for="provider">Execution provider</label>
+        <select id="provider"></select>
+      </div>
+    </div>
+    <p class="help" id="checkpointNote" style="margin:14px 0 0"></p>
+    <div class="note warn" id="gpuNote" style="margin:14px 0 0; display:none"></div>
+  </section>
+
+  <!-- ============ 3. RUN ============ -->
+  <section class="panel">
+    <h2>3 · Run</h2>
+    <div class="controls">
+      <button id="run" class="primary">Run on selected</button>
+      <button id="selectAll" class="ghost">Select all</button>
+      <button id="clearSel" class="ghost">Select none</button>
+      <span class="spacer"></span>
+      <button id="report" class="ghost" disabled>Open full-size report</button>
+    </div>
+    <p class="help" style="margin:14px 0 0" id="runHint"></p>
+  </section>
+
+  <section class="panel">
+    <h2>Progress</h2>
+    <pre id="log"><span class="dim">Idle. Pick images, then press "Run on selected".</span></pre>
+  </section>
+
+  <section id="results"></section>
+</div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id)
+const log = $('log')
+const results = $('results')
+const filesEl = $('files')
+
+let stream = null
+let files = []              // [{ name, bytes, mtimeMs }]
+const picked = new Set()    // file names
+let checkpoints = []
+let providers = []
+
+/* ------------------------------- log ------------------------------- */
+function appendLog(text, kind) {
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40
+  const line = document.createElement('div')
+  if (kind) line.className = kind
+  line.textContent = text
+  log.appendChild(line)
+  if (atBottom) log.scrollTop = log.scrollHeight
+}
+function resetLog() { log.textContent = '' }
+
+/* ---------------------------- formatting --------------------------- */
+function human(bytes) {
+  if (!bytes) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let i = 0
+  let n = bytes
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++ }
+  return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${units[i]}`
+}
+
+/* ------------------------------ files ------------------------------ */
+function renderFiles() {
+  filesEl.textContent = ''
+
+  if (!files.length) {
+    const p = document.createElement('p')
+    p.className = 'empty'
+    p.textContent = 'No images yet. Upload some above.'
+    filesEl.appendChild(p)
+  }
+
+  for (const file of files) {
+    const card = document.createElement('div')
+    card.className = picked.has(file.name) ? 'file picked' : 'file'
+    card.title = `${file.name} — ${human(file.bytes)}`
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.del')) return
+      if (picked.has(file.name)) picked.delete(file.name)
+      else picked.add(file.name)
+      renderFiles()
+    })
+
+    const tick = document.createElement('div')
+    tick.className = 'tick'
+    tick.textContent = picked.has(file.name) ? '✓' : ''
+    card.appendChild(tick)
+
+    const del = document.createElement('button')
+    del.className = 'del'
+    del.type = 'button'
+    del.textContent = '×'
+    del.title = `Delete ${file.name} from rmbg2-lab/inputs`
+    del.addEventListener('click', async (e) => {
+      e.stopPropagation()
+      await removeFile(file.name)
+    })
+    card.appendChild(del)
+
+    const img = document.createElement('img')
+    img.loading = 'lazy'
+    img.alt = file.name
+    img.src = `/rmbg2/input/${encodeURIComponent(file.name)}?v=${Math.round(file.mtimeMs || 0)}`
+    img.onerror = () => { img.style.visibility = 'hidden' }
+    card.appendChild(img)
+
+    const name = document.createElement('div')
+    name.className = 'name'
+    name.textContent = file.name
+    card.appendChild(name)
+
+    filesEl.appendChild(card)
+  }
+
+  const total = files.reduce((sum, f) => sum + (f.bytes || 0), 0)
+  $('fileInfo').textContent = files.length
+    ? `${files.length} image(s), ${human(total)} total · ${picked.size} selected`
+    : ''
+  updateRunState()
+}
+
+function updateRunState() {
+  if (stream) return
+  $('run').disabled = picked.size === 0
+  $('runHint').textContent = picked.size
+    ? `Will run on ${picked.size} selected image(s).`
+    : 'Select at least one image.'
+}
+
+async function loadFiles() {
+  const res = await fetch('/rmbg2/list')
+  if (!res.ok) { appendLog(`Could not list inputs (HTTP ${res.status})`, 'err'); return }
+  const data = await res.json()
+
+  files = data.files || []
+  checkpoints = data.checkpoints || []
+
+  // Keep the selection sensible across refreshes: default to everything.
+  const known = new Set(files.map((f) => f.name))
+  for (const name of [...picked]) if (!known.has(name)) picked.delete(name)
+  if (!picked.size) for (const f of files) picked.add(f.name)
+
+  renderFiles()
+  renderCheckpoints()
+}
+
+async function uploadFiles(list) {
+  const incoming = [...list].filter(
+    (f) => f.type.startsWith('image/') || /\.(png|jpe?g|webp|avif|tiff?|gif|bmp)$/i.test(f.name)
+  )
+  if (!incoming.length) { appendLog('Nothing to upload (no image files in that drop).', 'warn'); return }
+
+  resetLog()
+  for (const file of incoming) {
+    appendLog(`uploading ${file.name} (${human(file.size)})…`, 'dim')
+    try {
+      const res = await fetch(`/rmbg2/upload?name=${encodeURIComponent(file.name)}`, {
+        method: 'POST',
+        body: file,             // raw bytes; the name travels in the query string
+        headers: { 'Content-Type': 'application/octet-stream' }
+      })
+      const data = await res.json()
+      if (!res.ok) { appendLog(`  rejected: ${data.error}`, 'err'); continue }
+      appendLog(`  saved as ${data.name}`, 'ok')
+      picked.add(data.name)
+    } catch (error) {
+      appendLog(`  failed: ${error.message}`, 'err')
+    }
+  }
+  await loadFiles()
+}
+
+async function removeFile(name) {
+  picked.delete(name)
+  try {
+    await fetch(`/rmbg2/delete?name=${encodeURIComponent(name)}`)
+  } catch { /* the refresh below shows the truth either way */ }
+  await loadFiles()
+}
+
+/* --------------------------- checkpoints --------------------------- */
+function renderCheckpoints() {
+  const select = $('checkpoint')
+  const previous = select.value
+  select.textContent = ''
+
+  for (const cp of checkpoints) {
+    const option = document.createElement('option')
+    option.value = cp.file
+    // Say up front whether this one still has to be downloaded. A 977 MB first run
+    // should be a known cost, not a surprise.
+    option.textContent = `${cp.label} — ${cp.approxSize}${cp.cached ? ' · cached' : ' · not downloaded'}`
+    option.title = cp.note || ''
+    select.appendChild(option)
+  }
+  if (previous && checkpoints.some((c) => c.file === previous)) select.value = previous
+
+  showCheckpointNote()
+  select.onchange = showCheckpointNote
+}
+
+function showCheckpointNote() {
+  const chosen = checkpoints.find((c) => c.file === $('checkpoint').value)
+  if (!chosen) { $('checkpointNote').textContent = ''; return }
+
+  const cache = chosen.cached
+    ? 'Already downloaded - no wait for weights.'
+    : `Not downloaded yet: the first run fetches ${chosen.approxSize} before it can start.\n` +
+      'Prefer to get that over with separately? Run `npm run rmbg2:preload`.'
+  $('checkpointNote').textContent = `${chosen.note || ''}  ${cache}`.trim()
+}
+
+/* ---------------------------- providers ---------------------------- */
+async function loadProviders() {
+  const select = $('provider')
+  try {
+    const res = await fetch('/rmbg2/providers')
+    const data = await res.json()
+    providers = data.providers || []
+  } catch {
+    providers = [{ id: 'cpu', label: 'CPU (default)', available: true }]
+  }
+
+  select.textContent = ''
+  for (const p of providers) {
+    const option = document.createElement('option')
+    option.value = p.id
+    option.textContent = p.available ? p.label : `${p.label} — not usable here`
+    option.title = p.note || ''
+    option.disabled = !p.available
+    select.appendChild(option)
+  }
+  // Default to CPU: it is the provider every number in this repo was measured with.
+  if (providers.some((p) => p.id === 'cpu' && p.available)) select.value = 'cpu'
+
+  select.addEventListener('change', showGpuNote)
+  showGpuNote()
+}
+
+function showGpuNote() {
+  const note = $('gpuNote')
+  const chosen = $('provider').value
+
+  if (chosen === 'cpu') { note.style.display = 'none'; note.textContent = ''; return }
+
+  note.style.display = ''
+  note.innerHTML =
+    '<strong>Measured on this machine, not theory.</strong> DirectML created its session ' +
+    'faster (~11 s vs ~23 s) but ran this graph <em>slower</em>: ~86 s per image versus ' +
+    '~20 s on CPU, and on the anchor image it returned an <em>empty</em> mask ' +
+    '(mean alpha 0.0000 instead of 0.2695). The GPU path stays available because hardware ' +
+    'varies &mdash; but check the numbers and the mask, and prefer CPU unless you measure a win here.'
+}
+
+/* ------------------------------- run ------------------------------- */
+function pill(text, kind) {
+  const span = document.createElement('span')
+  span.className = kind ? `pill ${kind}` : 'pill'
+  span.textContent = text
+  return span
+}
+
+function renderResult(result) {
+  const card = document.createElement('section')
+  card.className = 'panel'
+
+  const head = document.createElement('div')
+  head.className = 'card-head'
+  const title = document.createElement('h3')
+  title.textContent = result.name
+  head.appendChild(title)
+
+  if (result.error) {
+    head.appendChild(pill('failed', 'bad'))
+  } else {
+    head.appendChild(pill(`${result.width}×${result.height}`))
+    head.appendChild(pill(result.timings.provider || 'cpu'))
+    head.appendChild(pill(
+      `inference ${(result.timings.inferenceMs / 1000).toFixed(1)}s`,
+      result.timings.inferenceMs > 60000 ? 'warn' : ''
+    ))
+    const weak = result.mask.separation !== 'strong'
+    const coverage = pill(`coverage ${(result.mask.coverage * 100).toFixed(1)}%`, weak ? 'warn' : '')
+    coverage.title =
+      'Fraction of pixels the mask calls subject (alpha ≥ 0.5). Mean alpha is ' +
+      `${(result.mask.meanAlpha * 100).toFixed(1)}% — they differ when the mask does not saturate.`
+    head.appendChild(coverage)
+
+    const sep = pill(`${result.mask.separation} separation`, weak ? 'warn' : '')
+    sep.title =
+      `Mask range ${result.mask.min} … ${result.mask.max}. "Strong" means it reaches near 0 and ` +
+      'near 1, i.e. the model is confident.'
+    head.appendChild(sep)
+  }
+  card.appendChild(head)
+
+  if (result.error) {
+    const pre = document.createElement('pre')
+    pre.className = 'fail-msg'
+    pre.textContent = result.error
+    card.appendChild(pre)
+    results.appendChild(card)
+    return
+  }
+
+  const grid = document.createElement('div')
+  grid.className = 'result-grid'
+  for (const [mime, base64, caption] of [
+    ['image/jpeg', result.previews.original, 'original'],
+    ['image/png', result.previews.cutout, 'cutout (alpha over checkerboard)'],
+    ['image/png', result.previews.mask, 'raw mask']
+  ]) {
+    const figure = document.createElement('figure')
+    const img = document.createElement('img')
+    img.src = `data:${mime};base64,${base64}`
+    img.alt = caption
+    const cap = document.createElement('figcaption')
+    cap.textContent = caption
+    figure.append(img, cap)
+    grid.appendChild(figure)
+  }
+  card.appendChild(grid)
+
+  const total = result.timings.preprocessMs + result.timings.inferenceMs + result.timings.postprocessMs
+  const stats = document.createElement('dl')
+  stats.className = 'stats'
+  for (const [key, value] of [
+    ['provider', result.timings.provider || 'cpu'],
+    ['preprocess', `${result.timings.preprocessMs} ms`],
+    ['inference', `${(result.timings.inferenceMs / 1000).toFixed(2)} s`],
+    ['output tensor', `${result.mask.outputName} ${JSON.stringify(result.mask.dims)}`],
+    ['mask range', `${result.mask.min} … ${result.mask.max}`],
+    ['coverage (α ≥ 0.5)', `${(result.mask.coverage * 100).toFixed(1)}%`],
+    ['mean alpha', `${(result.mask.meanAlpha * 100).toFixed(1)}%`],
+    ['files', result.files.cutout]
+  ]) {
+    const row = document.createElement('div')
+    const dt = document.createElement('dt')
+    dt.textContent = key
+    const dd = document.createElement('dd')
+    dd.textContent = value
+    row.append(dt, dd)
+    stats.appendChild(row)
+  }
+  card.appendChild(stats)
+  results.appendChild(card)
+}
+
+function setBusy(busy) {
+  $('selectAll').disabled = busy
+  $('clearSel').disabled = busy
+  $('checkpoint').disabled = busy
+  $('provider').disabled = busy
+  if (busy) $('run').disabled = true
+  else updateRunState()
+}
+
+$('run').addEventListener('click', () => {
+  results.textContent = ''
+  resetLog()
+  setBusy(true)
+
+  const params = new URLSearchParams({
+    checkpoint: $('checkpoint').value,
+    provider: $('provider').value,
+    inputs: [...picked].join(',')
+  })
+
+  stream = new EventSource(`/rmbg2/run?${params}`)
+
+  stream.onmessage = (event) => {
+    const message = JSON.parse(event.data)
+    if (message.type === 'log') {
+      appendLog(message.text, /FAILED|error/i.test(message.text) ? 'err' : null)
+    } else if (message.type === 'ready') {
+      appendLog(`runner ready — ${message.model} → ${message.file} on ${message.provider}`, 'dim')
+    } else if (message.type === 'result') {
+      appendLog('done.', 'ok')
+      $('report').disabled = false
+      for (const r of message.results) renderResult(r)
+    } else if (message.type === 'error') {
+      appendLog(message.message, 'err')
+    }
+  }
+
+  stream.onerror = () => {
+    if (stream && stream.readyState === EventSource.CLOSED) appendLog('stream closed.', 'dim')
+    stream = null
+    setBusy(false)
+  }
+})
+
+$('selectAll').addEventListener('click', () => { for (const f of files) picked.add(f.name); renderFiles() })
+$('clearSel').addEventListener('click', () => { picked.clear(); renderFiles() })
+$('report').addEventListener('click', () => window.open('/rmbg2/report', '_blank'))
+
+/* ---------------------------- upload UI ---------------------------- */
+const drop = $('drop')
+drop.addEventListener('click', () => $('picker').click())
+drop.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('picker').click() }
+})
+$('picker').addEventListener('change', (e) => {
+  uploadFiles(e.target.files)
+  e.target.value = ''       // so the same file can be picked again
+})
+
+for (const type of ['dragenter', 'dragover']) {
+  drop.addEventListener(type, (e) => { e.preventDefault(); drop.classList.add('over') })
+}
+for (const type of ['dragleave', 'drop']) {
+  drop.addEventListener(type, (e) => { e.preventDefault(); drop.classList.remove('over') })
+}
+drop.addEventListener('drop', (e) => {
+  if (e.dataTransfer?.files?.length) uploadFiles(e.dataTransfer.files)
+})
+
+// Paste: window-level so it works without focusing the dropzone first.
+window.addEventListener('paste', (e) => {
+  const items = [...(e.clipboardData?.items || [])].filter((i) => i.type.startsWith('image/'))
+  if (!items.length) return
+  const pasted = items
+    .map((item, i) => {
+      const blob = item.getAsFile()
+      if (!blob) return null
+      const ext = (blob.type.split('/')[1] || 'png').replace('jpeg', 'jpg')
+      const named = blob.name && /\.\w+$/.test(blob.name)
+        ? blob.name
+        : `pasted-${Date.now()}-${i}.${ext}`
+      return new File([blob], named, { type: blob.type })
+    })
+    .filter(Boolean)
+  if (pasted.length) uploadFiles(pasted)
+})
+
+/* ------------------------------ boot ------------------------------- */
+await loadFiles()
+await loadProviders()
+updateRunState()
+</script>
+</body>
+</html>

@@ -17,6 +17,12 @@ server, no API, and no backend — images never leave the device.
 | Dev server (port 5173, auto-opens browser) | `npm run dev` |
 | Production build | `npm run build` |
 | Preview the built output | `npm run preview` |
+| Local RMBG-2.0 CPU lab (see below) | `npm run rmbg2` / `npm run rmbg2:help` |
+| Local RMBG-2.0 CPU lab, one-click GUI (Windows) | `start-rmbg2.bat` |
+| Local RMBG-2.0 CPU lab, one-click terminal (Windows) | `start-rmbg2-cmd.bat` |
+| Local RMBG-2.0 lab, point-and-click GUI | `npm run rmbg2:lab` → `/rmbg2` |
+| Pre-download RMBG-2.0 weights | `npm run rmbg2:preload` / `:preload:all` |
+| Compare RMBG-2.0 execution providers | `npm run rmbg2:bench` |
 | Report AI context cost per file | `npm run context:report` |
 | Enforce the file-size budget | `npm run context:check` |
 | Unit tests (vitest, pure modules) | `npm test` |
@@ -154,6 +160,110 @@ model OOMs. A truncated Hugging Face download surfaces as `protobuf parsing fail
 OOM — compare the local byte count against the repo's reported size before concluding
 anything. And since the app fetches weights from HF at runtime, you can test a new model id
 by editing `modelOptions` alone, with no local mirroring.
+
+### Testing RMBG-2.0 anyway: the Node-side lab (`rmbg2-lab/`)
+
+RMBG-2.0 is unrunnable *in a browser*, but not *on the machine*. The identical bytes create a
+session fine under `onnxruntime-node`, so there is a local CPU tester that runs the real model
+and shows the output. This is the ONLY place RMBG-2.0 can be evaluated; it is deliberately
+outside `src/` and must stay there.
+
+| File | Role |
+| --- | --- |
+| `scripts/rmbg2.mjs` | CLI only: args, help, entry point |
+| `scripts/rmbg2.config.mjs` | paths, checkpoints, execution providers, preprocessing constants, token |
+| `scripts/rmbg2-image.mjs` | ALL `sharp` usage: inputs, preprocess, mask stats, previews |
+| `scripts/rmbg2-session.mjs` | the ONNX session + the batch loop |
+| `scripts/rmbg2-report.mjs` | the standalone HTML report |
+| `scripts/rmbg2-serve.mjs` | the `--serve` newline-JSON protocol |
+| `scripts/rmbg2-bench.mjs` | provider benchmark, with a mask-correctness check |
+| `scripts/rmbg2-vite-plugin.mjs` | dev-only `/rmbg2` routes (page, list, upload, delete, providers, run, report); spawns the CLI as a **child process** |
+| `scripts/rmbg2.page.html` | the lab page — a GUI: upload/drop/paste, pick images, checkpoint, provider |
+| `rmbg2-lab/` | gitignored: inputs, outputs, `.cache/` weights |
+
+Those five `rmbg2-*` modules are one file's job split at real seams, because the single
+runner crossed the repo's 800-line budget in `context:check`. Nothing in `rmbg2-image.mjs`
+knows about ONNX; nothing in `rmbg2-serve.mjs` knows about sharp. Keep that property if you
+touch them, and only `rmbg2.mjs` should run work at import time.
+
+`npm run rmbg2` runs a batch; `npm run rmbg2:lab` opens the GUI at
+`http://localhost:5173/rmbg2` (or reach it during any `npm run dev`), where you can drop in
+images, pick which to process, and choose checkpoint + provider. Two Windows launchers wrap
+these: `start-rmbg2.bat` (GUI) and `start-rmbg2-cmd.bat` (terminal, two-step: it shows the
+input folder, waits for Enter, then confirms the image count before running). `npm run
+rmbg2:bench` compares providers and flags a wrong mask; `npm run rmbg2:preload` fetches weights
+deliberately so the first run does not stall. `rmbg2-lab/README.md` has setup and troubleshooting.
+
+Uploads go through `/rmbg2/upload?name=<file>` as a **raw body** (not multipart, which would
+need a dependency). The name is reduced to a basename, sanitised, and extension-whitelisted,
+and the body is size-capped — `npm run rmbg2:apitest` (needs the dev server up) asserts that
+`../evil.png` lands as `evil.png` inside `inputs/`, `.exe` is refused with 400, and `/input/`
+refuses traversal. Keep that property if you touch the route.
+
+Things that are easy to get wrong here:
+
+- **The child process is not a style choice.** `onnxruntime-node` cannot live in Vite's module
+  graph (Vite tries to pre-bundle its native bindings), and a 1024×1024 run has a multi-GB
+  working set that must not be able to take the dev server down with it.
+- **Dev-only, three ways.** `apply: 'serve'` in the plugin, so `npm run build` never sees it;
+  the page is not an input to the Rollup build, so it is absent from `dist/`; and every request
+  is rejected unless `remoteAddress` is loopback. Keep all three.
+- **Preprocessing is pinned to the reference implementation** (1024×1024 `fit: 'fill'`
+  stretch, BGR, ImageNet mean/std, sigmoid, mask resized back to source). The 1024×1024 resize
+  is the same figure that made the *browser* OOM — on native Node it is unremarkable, because
+  the 32-bit WASM heap was the constraint, not the graph.
+- **`executionProviders: ['cpu']` by default.** Not a preference: this is a correctness
+  reviewer, and a mask is only comparable across runs if the provider is held constant.
+- **The GPU advice you will find online is wrong for this package, twice over.** Both parts
+  were measured (RTX 4050 Laptop, 6 GB, 2026-09-25), not assumed:
+  1. **There is no CUDA provider.** `listSupportedBackends()` returns only `cpu`, `dml`,
+     `webgpu`. `--provider=cuda` cannot work; no setting fixes it.
+  2. **DirectML was slower and produced an empty mask.** Session load 10.9 s vs 23.4 s (dml
+     wins), inference **85.9 s vs 19.6 s** (dml loses 4x), `meanAlpha` **0.0000 vs 0.2695**
+     (dml returns a blank mask). `npm run rmbg2:bench` reproduces this and checks the mask
+     VALUE, not just the clock — a timing-only benchmark would have called it a win.
+  Keep CPU the default. The `dml` option stays only because hardware varies, and the UI warns
+  with these numbers when it is selected.
+- **The checkpoint is gated** (`gated: "auto"`). No anonymous download path exists, so a token
+  is mandatory. `.env` is gitignored; `HF_TOKEN` is read from there, or from the environment.
+- **`onnxruntime-node` and `sharp` are intentionally NOT in `package.json`.** They are declared
+  dependencies only in the sense that `package.json` lists them; `.github/workflows` and any
+  clone rely on the documented install step, which keeps the app's
+  no-server-dependency posture honest. If you find them missing, the README says what to run.
+- **Resolve the token BEFORE any branch that can download.** This bit once: `resolveToken()` sat
+  only on the batch path of `main()`, *after* the `--serve` and `--preload` early returns, so both
+  built their session with an empty token and sent `Authorization: Bearer ` to Hugging Face. A
+  CACHED checkpoint still worked (no request is made), so it only surfaced when a fresh checkpoint
+  was requested - as a bare `HTTP 401`, which reads as "your token is wrong" when it is fine.
+  `main()` now resolves it once, after `--help` / `--check-providers` / `--list` (which touch no
+  network and must not need a token) and before everything else. `npm run rmbg2:tokentest` guards
+  the plumbing via a `hasToken` boolean on the `--serve` handshake - a boolean, never the value.
+- **Weights are cached with a `.meta.json` byte-count sidecar.** A finished download records its
+  exact size and every run re-checks it, so a truncated file is treated as absent and refetched
+  rather than surfacing much later as `protobuf parsing failed`. A cache with no sidecar (written
+  by an older version) is adopted and recorded, not thrown away.
+- Measured checkpoint sizes from the live repo: `model_q4f16.onnx` **223 MB**,
+  `model_fp16.onnx` **490 MB**, `model.onnx` **977 MB**.
+- **Verified working end-to-end** (2026-09-25, laptop CPU): session load ~26 s, then
+  ~16-19 s per image. The correctness anchor is `sample-01-circle.png` — a disc of radius 300
+  in 1024², so `pi*300^2/1024^2` = **26.96%** of the frame. The model returns **26.9%**, which
+  validates resize, BGR order, ImageNet normalisation, sigmoid and resize-back in one number.
+  Keep that sample: if a refactor breaks any of those steps, this figure moves.
+- **Never judge a mask by one percentage.** `meanAlpha` and `coverage` (share of pixels at
+  alpha ≥ 0.5) are different numbers and only agree when the mask saturates. `sample-02` is the
+  proof: its mask stays in 0.50–0.73, so the same 14.4%-foreground segmentation reads 53% mean
+  alpha and **100%** coverage. Both are printed, plus a `separation` verdict
+  (strong *reaches* 0 and 1 / weak *never leaves* the middle). A weak mask means the model is
+  unsure; look at the `-mask.png` rather than trusting the number.
+- **sharp promotes a 1-channel raw buffer to 3 channels on output — read the channel count,
+  never assume it.** This bit `composeCutout` and the symptom was invisible in the report: the
+  mask PNG was perfect (written by a separate path) and the RGB survived, so only the ALPHA was
+  wrong. Indexing a 3-channel buffer as if it were 1 consumes just the first third of the mask,
+  leaving the rest unread — the cutout came out mostly transparent while every number stayed
+  green. Measured: `sample-01` read 12.8% opaque instead of 26.9%, and the real photo lost the
+  subject entirely (correct RGB, alpha 0). Fixed by `toColourspace('b-w')` **plus** indexing with
+  `maskInfo.channels`. **Verify a cutout by its alpha coverage, not by eye** — the check is
+  `opaque% ≈ mask coverage%`; a mismatch means this bug. The samples are the regression guard.
 
 ## Non-obvious constraints — read before editing
 
