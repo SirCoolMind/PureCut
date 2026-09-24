@@ -1,6 +1,7 @@
 import { pipeline, env, AutoModelForSemanticSegmentation, RawImage } from '@huggingface/transformers';
 import { STORAGE_KEYS } from './core/storageKeys.js';
 import { modelOptions } from './constants.js';
+import { isSkillsafeModel, preloadSkillsafeModel, runSkillsafeModel, resetSkillsafeModels } from './skillsafeEngine.js';
 
 /**
  * Some ONNX graphs contain ops the WebGPU WGSL shader compiler rejects - notably `Pad`
@@ -10,12 +11,13 @@ import { modelOptions } from './constants.js';
  *
  * A model option can declare this with `forceWasm: true`. Ids without that flag are still
  * matched by substring, which is how the older BiRefNet checkpoints are caught.
+ * U2-Net models also use MaxPool with ceil_mode=True which requires WASM SIMD.
  */
-const WASM_ONLY_ID_HINTS = ['BiRefNet']
+const WASM_ONLY_ID_HINTS = ['BiRefNet', 'u2net'];
 
 function isWasmOnlyModel(modelId) {
-  if (modelOptions.find((m) => m.id === modelId)?.forceWasm) return true
-  return WASM_ONLY_ID_HINTS.some((hint) => !!modelId && modelId.includes(hint))
+  if (modelOptions.find((m) => m.id === modelId)?.forceWasm) return true;
+  return WASM_ONLY_ID_HINTS.some((hint) => !!modelId && modelId.includes(hint));
 }
 
 // Ensure SegformerForSemanticSegmentation is properly registered for image-segmentation tasks (used by RMBG-1.4 and related checkpoints)
@@ -51,6 +53,7 @@ const loadedPipelines = {};
  */
 export function resetLoadedModels() {
   for (let key in loadedPipelines) delete loadedPipelines[key];
+  resetSkillsafeModels();
 }
 
 /**
@@ -59,9 +62,8 @@ export function resetLoadedModels() {
 async function resolveModelDevice(requestedDevice, modelId) {
   let wantsGpu = requestedDevice === 'gpu' || requestedDevice === 'webgpu';
   
-  // BiRefNet (Swin backbone) contains Pad, ScatterND, and 17 storage buffers which are incompatible
-  // with WebGPU WGSL shader compilers in Firefox and Chromium (e.g. "ShaderModule with 'Pad' label is invalid").
-  // Always route BiRefNet to multi-threaded WASM SIMD for rock-solid stability and zero shader errors.
+  // BiRefNet (Swin backbone) and U2-Net models (ceil_mode MaxPool) are incompatible with WebGPU WGSL shader compilers.
+  // Always route to multi-threaded WASM SIMD for rock-solid stability and zero shader errors.
   if (isWasmOnlyModel(modelId)) {
     return 'wasm';
   }
@@ -87,6 +89,10 @@ async function resolveModelDevice(requestedDevice, modelId) {
  * Preload model
  */
 export async function preloadTransformersModel(modelId, dtype = 'q8', disableOptimization = false, device = 'webgpu', onProgress) {
+  if (isSkillsafeModel(modelId)) {
+    return await preloadSkillsafeModel(modelId, device, onProgress);
+  }
+
   const targetDevice = await resolveModelDevice(device, modelId);
   const pipelineKey = `${modelId}_${targetDevice}`;
 
@@ -108,6 +114,10 @@ export async function preloadTransformersModel(modelId, dtype = 'q8', disableOpt
  * Run Transformers.js Models (RMBG, ModNet, BiRefNet, U2Net)
  */
 export async function runTransformersModel(file, modelId, dtype = 'q8', disableOptimization = false, device = 'webgpu', onProgress) {
+  if (isSkillsafeModel(modelId)) {
+    return await runSkillsafeModel(file, modelId, device, onProgress);
+  }
+
   const objectUrl = URL.createObjectURL(file);
   let effectiveDevice = await resolveModelDevice(device, modelId);
   let pipelineKey = `${modelId}_${effectiveDevice}`;

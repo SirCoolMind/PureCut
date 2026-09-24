@@ -57,7 +57,7 @@ const statusMessage = ref('')
 // Filled in by processImage() once inference completes. See useTelemetry.
 const { telemetry } = useTelemetry()
 
-const selectedModel = ref('briaai/RMBG-1.4')
+const selectedModel = ref('skillsafe-ai/u2netp')
 const selectedDevice = ref('gpu') // 'gpu' | 'cpu'
 
 // Model cache state + the "clear cached models" flow. See useModelCache.

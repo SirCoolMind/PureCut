@@ -8,7 +8,11 @@ export const modelOptions = [
   // compiler) and a working resolution the browser WASM heap can actually hold. Two bigger
   // BiRefNet / RMBG-2.0 checkpoints do NOT run in-browser - see "Model catalogue" in
   // AGENTS.md before changing this list or the downscale ladder in aiEngine.js.
-  { id: 'onnx-community/BiRefNet_512x512-ONNX', name: 'BiRefNet 512 (Highest Quality · CPU Only)', size: '473 MB', engine: 'transformers', dtype: 'fp16', forceWasm: true, desc: 'BiRefNet - the architecture behind BRIA RMBG-2.0 - at a 512px working resolution so it fits the browser WASM heap. Very large download and the slowest option here.' }
+  { id: 'onnx-community/BiRefNet_512x512-ONNX', name: 'BiRefNet 512 (Highest Quality · CPU Only)', size: '473 MB', engine: 'transformers', dtype: 'fp16', forceWasm: true, desc: 'BiRefNet - the architecture behind BRIA RMBG-2.0 - at a 512px working resolution so it fits the browser WASM heap. Very large download and the slowest option here.' },
+  { id: 'skillsafe-ai/u2netp', name: 'U²-Net-p (Ultra-Lightweight · Rembg)', size: '4.4 MB', engine: 'onnx', dtype: 'fp32', desc: 'Lightweight U²-Net portrait and salient object segmentation (only 4.4 MB, ideal for fast background removal).' },
+  { id: 'skillsafe-ai/u2net', name: 'U²-Net (Full Salient Cutout · Rembg)', size: '176 MB', engine: 'onnx', dtype: 'fp32', desc: 'Full-capacity U²-Net architecture for deep salient object segmentation and crisp edges.' },
+  { id: 'skillsafe-ai/u2net-human-seg', name: 'U²-Net Human Seg (Portrait Specialist)', size: '176 MB', engine: 'onnx', dtype: 'fp32', desc: 'Specialized U²-Net model fine-tuned specifically for human figures, portraits, and clothing.' },
+  { id: 'skillsafe-ai/isnet-general-use', name: 'IS-Net General Use (1024px High-Res Rembg)', size: '179 MB', engine: 'onnx', dtype: 'fp32', desc: 'Full 1024x1024 Dichotomous Image Segmentation model from Rembg for high-fidelity cutouts.' }
 ]
 
 export const changelog = [
