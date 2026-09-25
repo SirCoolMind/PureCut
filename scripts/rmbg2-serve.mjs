@@ -10,8 +10,9 @@
  * Split out of `rmbg2.mjs` when that file crossed the repo's 800-line budget.
  */
 
+import { CHECKPOINTS } from './rmbg2.config.mjs'
 import { listInputs } from './rmbg2-image.mjs'
-import { runBatch } from './rmbg2-session.mjs'
+import { Rmbg2Session, runBatch } from './rmbg2-session.mjs'
 
 export async function serve(session, sharp) {
   const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`)
@@ -52,18 +53,47 @@ export async function serve(session, sharp) {
       })
       return
     }
+    if (request.action === 'preload') {
+      // Fetch the weights only - no inference. Kept here (rather than spawning the
+      // CLI again) so the download shares this process's cache checks and reports
+      // progress over the same stream.
+      const targets = request.all
+        ? CHECKPOINTS.map((c) => ({ model: c.model, file: c.file, label: c.label }))
+        : [{ model: session.model, file: request.checkpoint || session.file, label: request.checkpoint || session.file }]
+
+      const results = []
+      for (const target of targets) {
+        const targetSession = new Rmbg2Session({
+          token: session.token,
+          provider: session.provider,
+          model: target.model,
+          file: target.file,
+          onLog: session.onLog
+        })
+        try {
+          const status = await targetSession.preload()
+          results.push({ file: target.file, label: target.label, ok: true, cached: status.cached, bytes: status.bytes })
+        } catch (error) {
+          results.push({ file: target.file, label: target.label, ok: false, error: error.message })
+        }
+      }
+      send({ type: 'preloaded', results })
+      return
+    }
+
     if (request.action !== 'run') {
       send({ type: 'error', message: `Unknown action: ${request.action}` })
       return
     }
 
     // Switching checkpoint drops the warm session rather than holding two
-    // multi-GB models at once. The page says so, so the next run's delay reads as
-    // expected rather than as a hang.
+    // multi-GB models at once. `release()` (not just nulling) hands the native
+    // allocation back, which is what keeps a Run All Model cycle from accumulating
+    // every model's memory.
     if (request.checkpoint && request.checkpoint !== session.file) {
       session.file = request.checkpoint
-      session.session = null
-      send({ type: 'log', text: `session: unloaded, will reload with ${session.file}` })
+      session.release()
+      send({ type: 'log', text: `session: released, will load ${session.file}` })
     }
 
     // Same for the provider: a dml session and a cpu session are different
@@ -72,13 +102,43 @@ export async function serve(session, sharp) {
       send({ type: 'log', text: `session: unloaded, will reload on ${session.provider}` })
     }
 
-    const inputs = await listInputs(request.inputs || [])
+    // An empty list must be refused, NOT passed on: `listInputs([])` means
+    // "everything in the CLI's inputs folder", and the GUI has no business running
+    // a batch the user staged for the terminal.
+    if (!request.inputs || !request.inputs.length) {
+      send({ type: 'error', message: 'No images were selected for this run.' })
+      return
+    }
+
+    const inputs = await listInputs(request.inputs)
     if (!inputs.length) {
-      send({ type: 'error', message: 'No matching images in rmbg2-lab/inputs.' })
+      send({ type: 'error', message: 'None of the selected files could be read.' })
       return
     }
 
     const { results, reportPath } = await runBatch({ session, sharp, inputs, onLog: session.onLog })
+
+    // `Run All Model` asks for this: every image for this checkpoint is done, so the
+    // model can be closed before the next one loads. Releasing here (rather than at
+    // the next load) means only ONE model is ever resident, and the machine gets its
+    // memory back between models instead of at the end of the whole cycle.
+    //
+    // This MUST happen before the result is sent. The plugin ends the SSE response as
+    // soon as it sees the result, so anything emitted afterwards is written to a
+    // closed stream and lost (and writing after `end()` is not safe).
+    //
+    // A plain Run does NOT ask for it, because keeping the session warm is what makes
+    // a second run on the same image fast.
+    if (request.release) {
+      const closed = session.release()
+      send({
+        type: 'log',
+        text: closed
+          ? `session: ${request.checkpoint || session.file} closed - memory released`
+          : 'session: nothing to close'
+      })
+    }
+
     send({
       type: 'result',
       reportPath,
@@ -86,6 +146,7 @@ export async function serve(session, sharp) {
       results: results.map((r) => ({
         name: r.name,
         error: r.error || null,
+        checkpoint: r.checkpoint || null,
         width: r.width,
         height: r.height,
         timings: r.timings || null,

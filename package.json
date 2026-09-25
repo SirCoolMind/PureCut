@@ -16,6 +16,8 @@
     "rmbg2:bench": "node scripts/rmbg2-bench.mjs",
     "rmbg2:apitest": "node scripts/rmbg2-apitest.mjs",
     "rmbg2:tokentest": "node scripts/rmbg2-tokentest.mjs",
+    "rmbg2:reruntest": "node scripts/rmbg2-reruntest.mjs",
+    "rmbg2:releasetest": "node scripts/rmbg2-releasetest.mjs",
     "typecheck": "vue-tsc --noEmit",
     "context:report": "node scripts/context-report.mjs",
     "context:check": "node scripts/context-report.mjs --check",

@@ -1,0 +1,233 @@
+/* ==========================================================================
+   rmbg2.page.css — styles for the RMBG-2.0 lab page.
+
+   Split out of rmbg2.page.html when the single file crossed the repo's 800-line
+   budget. The page is now markup (html) + presentation (this file) + behaviour
+   (rmbg2.page.js), which the dev-only Vite plugin serves from /rmbg2/app.css and
+   /rmbg2/app.js.
+
+   Layout intent: the operating controls must fit ONE screen, so `.stage` is
+   `height: 100dvh; overflow: hidden` with the panels scrolling internally. The
+   results live below the fold on purpose.
+   ========================================================================== */
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  :root {
+    --bg: #070b12;
+    --panel: #0e1420;
+    --panel-2: #121a28;
+    --line: #1e2b3f;
+    --line-2: #26364d;
+    --text: #f1f5f9;
+    --muted: #8b9bb4;
+    --accent: #5aa9e6;
+    --warn: #f0c274;
+    --danger: #f08a8a;
+    --ok: #63d69b;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  code { background: #131c2b; padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
+
+  /* ======================================================================
+     STAGE — everything needed to operate fits the first viewport.
+     `height: 100dvh` + `overflow: hidden`, with the columns scrolling
+     INTERNALLY, so the Run button can never be pushed off screen.
+     ====================================================================== */
+  .stage {
+    height: 100dvh;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 11px;
+    padding: 13px 15px;
+    overflow: hidden;
+  }
+
+  .topbar { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .topbar h1 { margin: 0; font-size: 17px; letter-spacing: -0.01em; white-space: nowrap; }
+  .badge {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 2px 8px; border-radius: 99px; white-space: nowrap;
+    background: #3a2a12; color: var(--warn); border: 1px solid #5c4218;
+  }
+  .topbar .spacer { flex: 1; }
+  .topbar details { font-size: 12px; color: var(--muted); position: relative; }
+  .topbar summary { cursor: pointer; list-style: none; color: var(--accent); white-space: nowrap; }
+  .topbar summary::-webkit-details-marker { display: none; }
+  .topbar details > p {
+    position: absolute; right: 0; top: 22px; z-index: 30; width: min(74ch, 78vw);
+    margin: 0; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px 14px; box-shadow: 0 14px 34px rgba(0,0,0,.55);
+    color: #c3d0e2; line-height: 1.55;
+  }
+
+  /* Two columns: images left, model + controls right. */
+  .columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: 11px;
+    min-height: 0;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    padding: 12px 13px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;         /* lets the inner scroller shrink rather than overflow */
+    overflow: hidden;
+  }
+  .panel > h2 {
+    margin: 0 0 9px; font-size: 11.5px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.07em; color: #9fb0c8;
+    display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap;
+  }
+  .panel > h2 .count { font-weight: 400; color: var(--muted); text-transform: none; letter-spacing: 0; }
+
+  /* ---------- left: image selection ---------- */
+  .drop {
+    border: 1.5px dashed #2b3d57;
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+    cursor: pointer;
+    background: #0b111c;
+    transition: border-color .15s, background .15s;
+    flex: 0 0 auto;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); background: #0d1624; }
+  .drop strong { display: block; font-size: 13px; margin-bottom: 2px; }
+  .drop span { color: var(--muted); font-size: 11.5px; }
+
+  .files {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+    margin-top: 9px;
+    overflow-y: auto;
+    align-content: start;
+    flex: 1 1 auto;
+    min-height: 56px;
+    padding-right: 2px;
+  }
+  .file {
+    position: relative; background: var(--panel-2); border: 1px solid var(--line-2);
+    border-radius: 9px; overflow: hidden; cursor: pointer;
+  }
+  .file.picked { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .file img { width: 100%; height: 60px; object-fit: cover; display: block; background: #0b1120; }
+  .file .name { font-size: 10px; padding: 4px 5px; color: #b9c7db; word-break: break-all;
+                line-height: 1.25; max-height: 32px; overflow: hidden; }
+  .file .tick { position: absolute; top: 4px; left: 4px; width: 17px; height: 17px;
+                border-radius: 4px; background: #0b111c; border: 1px solid #3d5271;
+                display: grid; place-items: center; font-size: 11px; color: var(--accent); font-weight: 700; }
+  .file.picked .tick { background: var(--accent); border-color: var(--accent); color: #06202f; }
+  .file .del { position: absolute; top: 4px; right: 4px; width: 18px; height: 18px; border: 0;
+               border-radius: 4px; background: rgba(8,12,20,.82); color: #cdd8e6;
+               cursor: pointer; font-size: 12px; line-height: 1; padding: 0; }
+  .file .del:hover { background: #4a1717; color: #fff; }
+
+  .empty { color: var(--muted); font-size: 12px; margin: 4px 2px; }
+
+  /* ---------- right: model, hardware, actions, log ---------- */
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .field label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+
+  /* Static explanation where the provider picker used to be. */
+  .modelinfo {
+    margin-top: 9px; padding: 9px 11px; border-radius: 9px;
+    background: #0b111c; border: 1px solid var(--line);
+    font-size: 11.5px; line-height: 1.5; color: #b9c7db; min-height: 4.6em;
+  }
+  .modelinfo .title { color: var(--text); font-weight: 600; display: block; margin-bottom: 2px; }
+  .modelinfo .meta { color: var(--muted); }
+  .modelinfo .ok { color: var(--ok); }
+  .modelinfo .warn { color: var(--warn); }
+
+  select, button { font: inherit; border-radius: 8px; border: 1px solid var(--line-2);
+                   background: var(--panel-2); color: var(--text); cursor: pointer; }
+  select { padding: 7px 9px; width: 100%; min-width: 0; }
+  select:disabled, button:disabled { opacity: .45; cursor: not-allowed; }
+  button { padding: 8px 11px; }
+  button:hover:not(:disabled) { background: #172134; }
+
+  .preload-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 9px; flex: 0 0 auto; }
+  .preload-row button { font-size: 12.5px; }
+
+  /* Run is the primary action; Run All Model is narrower and warning-coloured
+     because it is a much longer job (one session reload per checkpoint). */
+  .actions { display: grid; grid-template-columns: 1.5fr 0.85fr 1.05fr; gap: 8px; margin-top: 9px; flex: 0 0 auto; }
+  .run {
+    background: linear-gradient(180deg, #2fbf7c, #1e8f5b);
+    border-color: #2aa06a; color: #04180f; font-size: 15px; font-weight: 700;
+    padding: 12px 15px; letter-spacing: .01em;
+    box-shadow: 0 4px 14px rgba(47,191,124,.22);
+  }
+  .run:hover:not(:disabled) { background: linear-gradient(180deg, #35cd87, #22a066); }
+  .run-all {
+    background: linear-gradient(180deg, #b98a2e, #8c6416);
+    border-color: #9c7420; color: #1a1204; font-size: 12.5px; font-weight: 700;
+    padding: 12px 8px;
+  }
+  .run-all:hover:not(:disabled) { background: linear-gradient(180deg, #c9973a, #976e1a); }
+  .report-btn { font-size: 11.5px; padding: 8px 6px; }
+
+  #log {
+    margin: 9px 0 0; padding: 10px; overflow-y: auto; flex: 1 1 auto; min-height: 64px;
+    background: #080d15; border: 1px solid var(--line); border-radius: 9px;
+    font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap; word-break: break-word; color: #b9c7db;
+  }
+  #log .ok { color: var(--ok); }
+  #log .err { color: var(--danger); }
+  #log .dim { color: var(--muted); }
+  #log .warn { color: var(--warn); }
+
+  /* ======================================================================
+     OUTPUT — deliberately below the fold. Scroll down to compare.
+     ====================================================================== */
+  .below { padding: 0 15px 44px; }
+  .below-head {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    margin: 0 0 13px; padding-top: 15px; border-top: 1px solid var(--line);
+  }
+  .below-head h2 { margin: 0; font-size: 12px; text-transform: uppercase;
+                   letter-spacing: .07em; color: #9fb0c8; }
+  .hint { color: var(--muted); font-size: 12px; }
+
+  .result { background: var(--panel); border: 1px solid var(--line);
+            border-radius: 13px; padding: 14px; margin-bottom: 15px; }
+  .card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .card-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
+  .pill { font-size: 10.5px; padding: 2px 8px; border-radius: 99px;
+          background: #1a2434; color: #9fb2cc; border: 1px solid var(--line-2); }
+  .pill.warn { background: #3a2a12; color: var(--warn); border-color: #5c4218; }
+  .pill.bad { background: #3a1414; color: var(--danger); border-color: #5c1818; }
+
+  .compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  figure { margin: 0; }
+  figure img { width: 100%; border-radius: 9px; display: block; background: #0b1120; }
+  figcaption { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+           gap: 5px 18px; margin: 13px 0 0; }
+  .stats div { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+  .stats dt { color: var(--muted); }
+  .stats dd { margin: 0; font-variant-numeric: tabular-nums; }
+  dl { margin: 0; }
+  .fail-msg { background: #160c0c; border: 1px solid #4c1d1d; border-radius: 9px;
+              padding: 11px; color: var(--danger); white-space: pre-wrap; font-size: 12px; margin: 0; }
+
+  @media (max-width: 900px) {
+    .stage { height: auto; overflow: visible; }
+    .columns { grid-template-columns: 1fr; }
+  }

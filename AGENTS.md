@@ -177,9 +177,10 @@ outside `src/` and must stay there.
 | `scripts/rmbg2-report.mjs` | the standalone HTML report |
 | `scripts/rmbg2-serve.mjs` | the `--serve` newline-JSON protocol |
 | `scripts/rmbg2-bench.mjs` | provider benchmark, with a mask-correctness check |
-| `scripts/rmbg2-vite-plugin.mjs` | dev-only `/rmbg2` routes (page, list, upload, delete, providers, run, report); spawns the CLI as a **child process** |
-| `scripts/rmbg2.page.html` | the lab page — a GUI: upload/drop/paste, pick images, checkpoint, provider |
-| `rmbg2-lab/` | gitignored: inputs, outputs, `.cache/` weights |
+| `scripts/rmbg2-vite-plugin.mjs` | dev-only `/rmbg2` routes (page, list, providers, upload, delete, clear, preload, run, report, out/, input/); spawns the CLI as a **child process** |
+| `scripts/rmbg2.page.html` | the lab page — a GUI laid out so the controls fit one screen, with results below the fold |
+| `rmbg2-lab/inputs/` | the **CLI's** working folder |
+| `rmbg2-lab/uploads/` | the **GUI's** folder; emptied on page load, never listed by the CLI |
 
 Those five `rmbg2-*` modules are one file's job split at real seams, because the single
 runner crossed the repo's 800-line budget in `context:check`. Nothing in `rmbg2-image.mjs`
@@ -197,8 +198,26 @@ deliberately so the first run does not stall. `rmbg2-lab/README.md` has setup an
 Uploads go through `/rmbg2/upload?name=<file>` as a **raw body** (not multipart, which would
 need a dependency). The name is reduced to a basename, sanitised, and extension-whitelisted,
 and the body is size-capped — `npm run rmbg2:apitest` (needs the dev server up) asserts that
-`../evil.png` lands as `evil.png` inside `inputs/`, `.exe` is refused with 400, and `/input/`
-refuses traversal. Keep that property if you touch the route.
+`../evil.png` lands as `evil.png` inside `uploads/`, `.exe` is refused with 400, `/input/`
+refuses traversal, and the CLI's `inputs/` folder is byte-for-byte unchanged. Keep that
+property if you touch the route.
+- **The GUI and the CLI use DIFFERENT folders, and that separation is load-bearing.** The GUI
+  works in `uploads/` (emptied on every page load, so nothing accumulates and a run only covers
+  what you just uploaded); the CLI works in `inputs/`. `handleRun` builds absolute paths from
+  `uploads/` itself rather than trusting the request, and it REFUSES an empty selection — an
+  empty list would otherwise fall through to the runner's `listInputs([])`, which means
+  "everything in `inputs/`" and would run a batch staged for the terminal.
+- **`EventSource` reconnects on its own, so a one-shot SSE endpoint must be idempotent.**
+  `/rmbg2/run` streams progress and ends the response when the result lands — at which point the
+  browser treats it as a dropped connection and re-opens the SAME url a few seconds later. That
+  url starts a run, so a single click re-ran the same images forever (observed: one extra run
+  every ~9 s, rewriting `outputs/` each time). Two fixes, both needed:
+  1. the page calls `stream.close()` on completion — merely dropping the reference (the old
+     `stream = null`) does NOT stop it, which is what made the loop unstoppable;
+  2. the page sends one `runId` per click and `handleRun` remembers it, so a reconnect REPLAYS
+     the stored result instead of re-running — the net for a tab reloaded mid-run.
+  `npm run rmbg2:reruntest` (needs the dev server) proves requests 2 and 3 replay and start no
+  batch, while a fresh `runId` still runs for real.
 
 Things that are easy to get wrong here:
 
@@ -222,8 +241,29 @@ Things that are easy to get wrong here:
      wins), inference **85.9 s vs 19.6 s** (dml loses 4x), `meanAlpha` **0.0000 vs 0.2695**
      (dml returns a blank mask). `npm run rmbg2:bench` reproduces this and checks the mask
      VALUE, not just the clock — a timing-only benchmark would have called it a win.
-  Keep CPU the default. The `dml` option stays only because hardware varies, and the UI warns
-  with these numbers when it is selected.
+  Keep CPU the default. The `dml` option stays in the CLI and `rmbg2:bench` only because hardware
+  varies — it is NOT offered in the GUI, because a dropdown of a broken choice is a way to get
+  bad results rather than a feature. The GUI's model panel explains the checkpoint instead.
+- **`Run All Model` in the GUI runs every checkpoint sequentially.** Not parallel: the runner holds
+  one warm session and switching checkpoint drops it, so overlapping runs would fight over a
+  multi-GB model. Each result carries its `checkpoint`, which is what lets the cards be labelled —
+  without it several cards for one image are indistinguishable.
+- **Releasing a session must call `session.release()`, not just null the reference.** An ONNX
+  InferenceSession holds a large native allocation — measured **8,543 MB** for q4f16 at 1024×1024,
+  dropping to **124 MB** after release (99% returned) — which is only given back on `release()` or
+  process exit. Nulling alone leaves it to the GC, so cycling checkpoints accumulates memory.
+  `Run All Model` passes `release=1` so each model is closed after its images finish and before the
+  next loads; a plain Run does not, because a warm session is what makes a repeat run fast.
+  `npm run rmbg2:releasetest` guards this.
+- **Anything emitted AFTER the result is lost, and writing after `response.end()` is unsafe.** The
+  plugin ends the SSE response the moment it sees the result, so the release log had to move
+  *before* the result send. If you add a step that reports progress at the end of a run, emit it
+  before the result.
+- **Editing the runner modules needs a dev-server restart.** `scripts/rmbg2.mjs --serve` runs as a
+  long-lived CHILD process, so changes to `rmbg2-serve.mjs` / `rmbg2-session.mjs` do not reach an
+  already-spawned child. Symptom: code changes appear to have no effect while the old child keeps
+  serving. (Also check the port — a stale dev server on 5173 silently serves an old plugin, and
+  Vite will quietly start on 5174 instead.)
 - **The checkpoint is gated** (`gated: "auto"`). No anonymous download path exists, so a token
   is mandatory. `.env` is gitignored; `HF_TOKEN` is read from there, or from the environment.
 - **`onnxruntime-node` and `sharp` are intentionally NOT in `package.json`.** They are declared

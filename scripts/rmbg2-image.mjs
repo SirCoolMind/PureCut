@@ -42,16 +42,17 @@ export async function listInputs(filters) {
   try {
     names = (await readdir(INPUT_DIR)).filter((n) => IMAGE_EXT.test(n))
   } catch {
-    return []
+    // A missing folder is fine: absolute paths below do not need it. The GUI keeps
+    // its uploads in `rmbg2-lab/uploads/` and passes full paths, so this path must
+    // work even when the CLI's `inputs/` folder does not exist.
   }
 
   if (!filters.length) return names.map((n) => path.join(INPUT_DIR, n)).sort()
 
   const matched = []
   for (const filter of filters) {
-    // A literal path to an existing file wins over folder scanning.
-    if (IMAGE_EXT.test(filter) && path.isAbsolute(filter)) {
-      matched.push(filter)
+    if (path.isAbsolute(filter)) {
+      if (IMAGE_EXT.test(filter)) matched.push(filter)
       continue
     }
     const needle = filter.toLowerCase()

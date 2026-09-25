@@ -11,6 +11,9 @@ npm run rmbg2 -- --list    # list inputs, download nothing
 npm run rmbg2:preload      # download the checkpoint(s), run no inference
 npm run rmbg2:bench        # compare execution providers with a correctness check
 npm run rmbg2:tokentest    # token plumbing guard (no download, no token needed)
+npm run rmbg2:apitest      # upload/delete/traversal checks (needs the dev server)
+npm run rmbg2:reruntest    # a reconnecting stream must not re-run the job
+npm run rmbg2:releasetest  # Run All Model closes each model before the next loads
 ```
 
 Everything is local: `rmbg2-lab/` is gitignored, and the token only ever goes to
@@ -78,11 +81,38 @@ npm run rmbg2:lab     # starts the dev server and opens http://localhost:5173/rm
 ```
 
 or during a normal `npm run dev`, open `http://localhost:5173/rmbg2`.
+This page is a **GUI front end**, laid out so that everything you need to operate it fits the
+first screen (no scrolling to find Run):
 
-This page is a **GUI front end**: drop images in (or click, or paste with Ctrl+V), tick which
-ones to process, pick a checkpoint and a provider, and press Run. Results appear inline with
-previews, and progress streams live. It writes to the same `rmbg2-lab/` folders as the CLI —
-the two are interchangeable, so you can upload in the browser and re-run from a terminal.
+- **Left — Images.** Drop, click, or paste (Ctrl+V). Tick which to run; `×` removes one.
+- **Right — Model & hardware.** A checkpoint picker, a panel explaining the selected model
+  (architecture, working resolution, size, cached state), **Preload {model}** / **Preload All
+  Model**, then a large green **Run**, an amber **Run All Model**, and **Open full-size report**.
+  The progress log sits underneath.
+- **Scroll down — Output.** The side-by-side comparison (original / cutout / mask) plus timings,
+  one card per image, labelled with the checkpoint that produced it.
+
+**There is no execution-provider picker.** DirectML is the only GPU provider this runtime bundles,
+and measurement showed it both slower on this graph and returning an empty mask, so offering it as
+a dropdown would only be a way to get bad results. Every run uses CPU. The provider plumbing is
+still there for the CLI (`--provider=dml`) and for `npm run rmbg2:bench`, which is how that finding
+stays reproducible.
+
+**Run All Model** runs the selected images through *every* checkpoint in turn, so you can compare
+them. For each model it loads the checkpoint, runs every selected image, then **closes the model
+before loading the next one** — only one model is ever resident, and the memory goes back between
+models rather than at the very end. That is worth a lot: q4f16 at 1024×1024 measured **8,543 MB**
+resident while loaded and **124 MB** after being closed, so without it a three-model cycle would
+accumulate every model at once. It is sequential for the same reason, so expect a session load per
+model.
+
+On the sample photo all three checkpoints agreed (17.3% coverage, strong separation); the
+quantised q4f16 was the fastest.
+
+**It runs only what you upload, and keeps nothing.** Uploads go to `rmbg2-lab/uploads/`, which the
+page empties on load, so each visit starts clean and nothing accumulates. That folder is
+deliberately separate from `rmbg2-lab/inputs/` (the CLI's working folder): the GUI never lists or
+clears that one, so a batch you staged for the terminal is safe.
 
 It is dev-only on three axes: registered with `apply: 'serve'`, absent from `dist/`, and every
 request is rejected unless it came from loopback. Uploads are size-capped, the filename is
@@ -135,7 +165,8 @@ table as universal.
 
 ```
 rmbg2-lab/
-  inputs/                     your images (plus synthetic samples)
+  inputs/                     the CLI's working folder (the GUI does not touch it)
+  uploads/                    images uploaded through the GUI (emptied on each page load)
   outputs/<name>-cutout.png   transparent cutout, full source resolution
   outputs/<name>-mask.png     raw 1024x1024 alpha mask
   outputs/report.html         self-contained side-by-side report
@@ -210,6 +241,8 @@ prediction is sigmoided, then the mask is resized back to the source size.
 | `scripts/rmbg2-bench.mjs` | provider benchmark + mask correctness check |
 | `scripts/rmbg2-apitest.mjs` | upload/delete/traversal checks (needs the dev server) |
 | `scripts/rmbg2-tokentest.mjs` | token-plumbing regression guard |
+| `scripts/rmbg2-reruntest.mjs` | proves a reconnecting stream cannot re-run a job |
+| `scripts/rmbg2-releasetest.mjs` | proves each model is closed between models |
 | `scripts/rmbg2-vite-plugin.mjs` | dev-only `/rmbg2` routes (page, list, upload, delete, providers, run, report) |
 | `scripts/rmbg2.page.html` | the lab page |
 

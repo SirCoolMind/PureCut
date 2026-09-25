@@ -101,6 +101,28 @@ export class Rmbg2Session {
   setProvider(provider) {
     if (!provider || provider === this.provider) return false
     this.provider = provider
+    this.release()
+    return true
+  }
+
+  /**
+   * Drop the warm session and hand its memory back.
+   *
+   * Setting `this.session = null` is NOT enough on its own. An ONNX InferenceSession
+   * owns a large native allocation - fp32 at a 1024x1024 input measured ~11.5 GB
+   * resident - which is only returned when `release()` is called or the process
+   * exits. Cycling checkpoints would otherwise keep every model's memory alive at
+   * once, so "Run All Model" would build up until the machine swapped.
+   *
+   * Returns true when there was something to release.
+   */
+  release() {
+    if (!this.session) return false
+    try {
+      this.session.release?.()
+    } catch {
+      // Already released or never fully created; dropping the reference is enough.
+    }
     this.session = null
     return true
   }
@@ -352,6 +374,9 @@ export async function runBatch({ session, sharp, inputs, onLog, writeReport = tr
         maskPath,
         width: pre.sourceWidth,
         height: pre.sourceHeight,
+        // The checkpoint is recorded per result: "Run all models" produces several
+        // cards for the same image, and without this they would be indistinguishable.
+        checkpoint: session.file,
         timings: { ...timings, provider: session.provider },
         mask: mask.stats,
         files: { cutout: `${base}-cutout.png`, mask: `${base}-mask.png` },

@@ -34,7 +34,7 @@ import { fileURLToPath } from 'node:url'
 import {
   ROOT,
   OUTPUT_DIR,
-  INPUT_DIR,
+  UPLOAD_DIR,
   PAGE_PATH,
   PAGE_URI,
   CHECKPOINTS,
@@ -201,14 +201,25 @@ export function rmbg2Lab() {
             return response.end(html)
           }
 
+          // The page's own assets. Served from disk rather than through Vite's
+          // module graph because the page itself is a plain file this middleware
+          // returns; keeping them together means one place to look.
+          if (route === '/app.css') {
+            return sendFile(response, fileURLToPath(new URL('./rmbg2.page.css', import.meta.url)), 'text/css')
+          }
+          if (route === '/app.js') {
+            return sendFile(response, fileURLToPath(new URL('./rmbg2.page.js', import.meta.url)), 'text/javascript')
+          }
           if (route === '/list') return await handleList(response)
           if (route === '/providers') return await handleProviders(response)
           if (route === '/upload') return await handleUpload(request, response, url)
           if (route === '/delete') return await handleDelete(response, url)
+          if (route === '/clear') return await handleClear(response)
+          if (route === '/preload') return await handlePreload(runner, response, url)
           if (route === '/run') return await handleRun(runner, response, url)
           if (route === '/report') return await sendFile(response, path.join(OUTPUT_DIR, 'report.html'), 'text/html')
           if (route.startsWith('/out/')) return await handleOutput(response, route)
-          if (route.startsWith('/input/')) return await handleInputImage(response, route)
+          if (route.startsWith('/input/')) return await handleUploadedImage(response, route)
         } catch (error) {
           return json(response, 500, { error: error.message })
         }
@@ -224,11 +235,11 @@ export function rmbg2Lab() {
 async function handleList(response) {
   let files = []
   try {
-    const names = (await readdir(INPUT_DIR)).filter((n) => IMAGE_EXT.test(n)).sort()
+    const names = (await readdir(UPLOAD_DIR)).filter((n) => IMAGE_EXT.test(n)).sort()
     files = await Promise.all(
       names.map(async (name) => {
-        const info = await stat(path.join(INPUT_DIR, name))
-        return { name, bytes: info.size, mtimeMs: info.mtimeMs }
+        const info = await stat(path.join(UPLOAD_DIR, name))
+        return { name, bytes: info.size, mtimeMs: info.mtimeMs, path: path.join(UPLOAD_DIR, name) }
       })
     )
   } catch {
@@ -308,35 +319,89 @@ async function handleUpload(request, response, url) {
   if (!body.length) return json(response, 400, { error: 'Empty upload.' })
 
   try {
-    await mkdir(INPUT_DIR, { recursive: true })
-    await writeFile(path.join(INPUT_DIR, name), body)
+    await mkdir(UPLOAD_DIR, { recursive: true })
+    await writeFile(path.join(UPLOAD_DIR, name), body)
   } catch (error) {
     return json(response, 500, { error: `Could not save: ${error.message}` })
   }
 
-  return json(response, 200, { name, bytes: body.length })
+  return json(response, 200, { name, bytes: body.length, path: path.join(UPLOAD_DIR, name) })
 }
 
-/** Remove an image from the inputs folder. Name is sanitised the same way. */
+/** Remove an image from the uploads folder. Name is sanitised the same way. */
 async function handleDelete(response, url) {
   const name = sanitizeImageName(url.searchParams.get('name') || '')
   if (!name) return json(response, 400, { error: 'Unsupported name.' })
 
   try {
-    await unlink(path.join(INPUT_DIR, name))
+    await unlink(path.join(UPLOAD_DIR, name))
     return json(response, 200, { removed: name })
-  } catch (error) {
+  } catch {
     return json(response, 404, { error: `Not found: ${name}` })
   }
 }
 
-/** Serve an uploaded input so the page can show a thumbnail of it. */
-async function handleInputImage(response, route) {
+/**
+ * Empty the uploads folder.
+ *
+ * The page calls this on load so a visit starts clean: the lab runs only what you
+ * upload in that session, and nothing piles up between visits. It deliberately
+ * touches `uploads/` only - never the CLI's `inputs/`, which may hold a staged
+ * batch that is none of the GUI's business.
+ */
+async function handleClear(response) {
+  let removed = 0
+  try {
+    const names = (await readdir(UPLOAD_DIR)).filter((n) => IMAGE_EXT.test(n))
+    for (const name of names) {
+      await unlink(path.join(UPLOAD_DIR, name))
+      removed++
+    }
+  } catch {
+    // Nothing to clear.
+  }
+  return json(response, 200, { removed })
+}
+
+/**
+ * Download weights without running inference.
+ *
+ * Exists so a several-hundred-MB fetch is something you choose to do, rather than
+ * a surprise stall in the middle of your first run.
+ */
+async function handlePreload(runner, response, url) {
+  response.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  })
+
+  const send = (payload) => response.write(`data: ${JSON.stringify(payload)}\n\n`)
+  const off = runner.onMessage(send)
+
+  const checkpoint = url.searchParams.get('checkpoint') || ''
+  const all = url.searchParams.get('all') === '1'
+
+  const finish = (message) => {
+    if (message.type === 'preloaded' || message.type === 'error') {
+      off()
+      response.end()
+    }
+  }
+  runner.onMessage(finish)
+
+  await runner.whenReady()
+  runner.send({ action: 'preload', checkpoint, all })
+}
+
+/** Serve an uploaded image so the page can show a thumbnail of it. */
+async function handleUploadedImage(response, route) {
   const name = sanitizeImageName(decodeURIComponent(route.slice('/input/'.length)))
   if (!name) return json(response, 400, { error: 'Unsupported name.' })
 
-  const target = path.join(INPUT_DIR, name)
-  if (!target.startsWith(INPUT_DIR)) return json(response, 403, { error: 'Outside the input folder.' })
+  const target = path.join(UPLOAD_DIR, name)
+  if (!target.startsWith(UPLOAD_DIR)) return json(response, 403, { error: 'Outside the uploads folder.' })
 
   return sendFile(response, target, MIME[path.extname(name).toLowerCase()] || 'application/octet-stream')
 }
@@ -379,6 +444,30 @@ function readBody(request, limit) {
 }
 
 /**
+ * Runs already seen, keyed by the page's per-click run id.
+ *
+ * WHY THIS EXISTS. `EventSource` RECONNECTS on its own whenever the server ends the
+ * response, and this endpoint is a one-shot job - so ending the stream after a
+ * result made the browser re-request the same URL and start the whole run again,
+ * indefinitely. The page now closes its stream (that is the primary fix); this map
+ * is the safety net for a client that cannot close: a tab reloaded mid-run, a
+ * crashed page, or a reconnect that slips through. A repeat request replays the
+ * stored result instead of starting a second multi-minute job.
+ *
+ * Bounded, because it holds full base64 previews per entry.
+ */
+const runs = new Map()
+const MAX_REMEMBERED_RUNS = 6
+
+function rememberRun(runId, entry) {
+  if (!runId) return
+  runs.set(runId, entry)
+  while (runs.size > MAX_REMEMBERED_RUNS) {
+    runs.delete(runs.keys().next().value)
+  }
+}
+
+/**
  * Progress is streamed as SSE because the first run downloads the weights and
  * loads the session - minutes of silence otherwise, which reads as a hang.
  */
@@ -394,23 +483,76 @@ async function handleRun(runner, response, url) {
   const off = runner.onMessage(send)
 
   // The page chooses what to run; an empty `inputs` means "everything in the folder".
+  const runId = url.searchParams.get('runId') || ''
   const checkpoint = url.searchParams.get('checkpoint') || ''
   const provider = url.searchParams.get('provider') || ''
-  const inputs = (url.searchParams.get('inputs') || '')
+  // "Close the model once every image is done" - used by Run All Model so only one
+  // checkpoint is ever resident.
+  const release = url.searchParams.get('release') === '1'
+  // The page sends the NAMES it uploaded; the absolute path is built here, so a
+  // request can never aim the runner at an arbitrary file on disk. Each name is
+  // re-sanitised rather than trusted.
+  //
+  // An empty list must NOT fall through to the runner's "no filters = everything
+  // in inputs/" behaviour: that folder belongs to the CLI and may hold a staged
+  // batch, which the GUI has no business running.
+  const requested = (url.searchParams.get('inputs') || '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
+
+  const inputs = requested
+    .map((name) => sanitizeImageName(name))
+    .filter(Boolean)
+    .map((name) => path.join(UPLOAD_DIR, name))
+
+  const invalid = requested.length - inputs.length
+
+  if (!inputs.length) {
+    send({ type: 'error', message: 'No images selected - upload one first.' })
+    off()
+    return response.end()
+  }
+  if (invalid > 0) {
+    send({ type: 'log', text: `${invalid} selected name(s) were rejected as unsafe and skipped.` })
+  }
+
+  const previous = runId ? runs.get(runId) : null
+
+  // Already finished: replay it. Never start the work again.
+  if (previous && previous.status === 'done') {
+    send({ type: 'log', text: 'this job already finished - replaying its result instead of re-running' })
+    send({ type: 'result', ...previous.payload, replayed: true })
+    off()
+    return response.end()
+  }
+
+  // Still running (a reconnect mid-job): follow it, do not restart it.
+  if (previous && previous.status === 'running') {
+    send({ type: 'log', text: 'this job is already running - following it, not restarting' })
+    const follow = (message) => {
+      if (message.type === 'result' || message.type === 'error') {
+        off()
+        response.end()
+      }
+    }
+    runner.onMessage(follow)
+    return
+  }
+
+  rememberRun(runId, { status: 'running' })
 
   // Warm-up is announced so a first-time run says "starting the runner" rather
   // than nothing at all.
   send({ type: 'log', text: 'runner: starting (first run also downloads the checkpoint)' })
   await runner.whenReady()
-  runner.send({ action: 'run', inputs, checkpoint, provider })
+  runner.send({ action: 'run', inputs, checkpoint, provider, release })
 
   // The batch is one request/one result, so close the stream when it lands.
   const finish = (message) => {
     if (message.type === 'result' || message.type === 'error') {
       off()
+      rememberRun(runId, { status: 'done', payload: message })
       response.end()
     }
   }

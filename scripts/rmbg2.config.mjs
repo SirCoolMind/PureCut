@@ -33,6 +33,17 @@ export const ROOT = fileURLToPath(new URL('..', import.meta.url))
 export const INPUT_DIR = path.join(ROOT, 'rmbg2-lab', 'inputs')
 export const OUTPUT_DIR = path.join(ROOT, 'rmbg2-lab', 'outputs')
 
+/**
+ * Scratch folder for images uploaded through the GUI.
+ *
+ * Kept separate from INPUT_DIR on purpose. `inputs/` is the CLI's working folder -
+ * a user may have a batch staged there - so the GUI must not list or clear it. The
+ * page uploads here, passes ABSOLUTE paths to the runner, and empties this folder
+ * when it loads, so a run only ever covers what was uploaded in that session and
+ * nothing is accumulated between visits.
+ */
+export const UPLOAD_DIR = path.join(ROOT, 'rmbg2-lab', 'uploads')
+
 /** The dev-only route. Registered by the plugin, absent from a production build. */
 export const PAGE_PATH = 'rmbg2.html'
 export const PAGE_URI = '/rmbg2'
