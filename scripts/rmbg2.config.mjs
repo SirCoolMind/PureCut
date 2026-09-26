@@ -66,21 +66,27 @@ export const CHECKPOINTS = [
     model: 'briaai/RMBG-2.0',
     file: 'onnx/model_q4f16.onnx',
     approxSize: '223 MB',
-    note: '4-bit quantised checkpoint. Smallest option that still is RMBG-2.0.'
+    note: '4-bit quantised checkpoint. Smallest option that still is RMBG-2.0.',
+    estimatedPeakRamMb: 9000,
+    minimumFreeRamMb: 12000
   },
   {
     label: 'RMBG-2.0 fp16',
     model: 'briaai/RMBG-2.0',
     file: 'onnx/model_fp16.onnx',
     approxSize: '490 MB',
-    note: 'Half precision. Bigger download, marginally cleaner edges.'
+    note: 'Half precision. Bigger download, marginally cleaner edges.',
+    estimatedPeakRamMb: 14000,
+    minimumFreeRamMb: 20000
   },
   {
     label: 'RMBG-2.0 fp32 (reference)',
     model: 'briaai/RMBG-2.0',
     file: 'onnx/model.onnx',
     approxSize: '977 MB',
-    note: 'The uncompressed export. Slowest and largest; use to sanity-check a quantisation.'
+    note: 'The uncompressed export. Slowest and largest; use to sanity-check a quantisation.',
+    estimatedPeakRamMb: 16000,
+    minimumFreeRamMb: 24000
   }
 ]
 
@@ -102,6 +108,18 @@ export const CHECKPOINTS = [
  * The mask is later resized back to the SOURCE image size, matching the reference.
  */
 export const INPUT_SIZE = 1024
+
+/**
+ * Upper bound for decoded source images used to create full-resolution cutouts.
+ *
+ * RMBG-2.0 itself always sees a 1024px image, but the final PNG is composed at
+ * the original dimensions. A highly compressed photo can therefore be small on
+ * disk while requiring hundreds of MB of raw RGBA memory. Keep the lab from
+ * exhausting the machine by rejecting such images before their full-size pixels
+ * are decoded. 32 MP is ample for high-resolution photos and keeps the
+ * composition buffers within a predictable range.
+ */
+export const MAX_SOURCE_PIXELS = 32 * 1024 * 1024
 
 export const NORMALIZE = {
   mean: [0.485, 0.456, 0.406],

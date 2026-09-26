@@ -88,6 +88,7 @@ class Runner {
     this.buffer = ''
     this.listeners = new Set()
     this.lastStats = null
+    this.activeRun = null
   }
 
   start() {
@@ -134,6 +135,10 @@ class Runner {
       this.lastStats = { ...message, at: Date.now() }
       return
     }
+    if (message.type === 'log' && this.activeRun) {
+      const progress = /^-- \[\d+\/\d+\] (.+?)(?: \(TTA\))?$/.exec(message.text)
+      if (progress) this.activeRun.image = progress[1]
+    }
     // `ready` announces a freshly started child; anything still waiting on one
     // can now send its request.
     if (message.type === 'ready') {
@@ -167,6 +172,7 @@ class Runner {
     this.child?.kill()
     this.child = null
     this.lastStats = null
+    this.activeRun = null
   }
 }
 
@@ -217,9 +223,12 @@ export function rmbg2Lab() {
           if (route === '/app.js') {
             return sendFile(response, fileURLToPath(new URL('./rmbg2.page.js', import.meta.url)), 'text/javascript')
           }
+          if (route === '/monitor.js') return sendFile(response, fileURLToPath(new URL('./rmbg2-monitor.js', import.meta.url)), 'text/javascript')
+          if (route === '/monitor.css') return sendFile(response, fileURLToPath(new URL('./rmbg2-monitor.css', import.meta.url)), 'text/css')
           if (route === '/list') return await handleList(response)
           if (route === '/providers') return await handleProviders(response)
           if (route === '/system') return handleSystem(runner, response)
+          if (route === '/release') return await handleRelease(runner, response, request)
           if (route === '/clear-cache') return await handleClearCache(runner, response, url)
           if (route === '/upload') return await handleUpload(request, response, url)
           if (route === '/delete') return await handleDelete(response, url)
@@ -263,7 +272,17 @@ async function handleList(response) {
     checkpoints: await Promise.all(
       CHECKPOINTS.map(async ({ label, file, approxSize, note, model }) => {
         const status = await weightsStatus(model, file)
-        return { label, file, approxSize, note, cached: status.cached, cachedBytes: status.bytes }
+        const checkpoint = CHECKPOINTS.find((item) => item.file === file)
+        return {
+          label,
+          file,
+          approxSize,
+          note,
+          estimatedPeakRamMb: checkpoint.estimatedPeakRamMb,
+          minimumFreeRamMb: checkpoint.minimumFreeRamMb,
+          cached: status.cached,
+          cachedBytes: status.bytes
+        }
       })
     )
   })
@@ -320,6 +339,8 @@ function handleSystem(runner, response) {
   const engineCpu = engineStats ? engineStats.cpuPercent : 0
   const totalProcessCpu = Math.min(100, Math.round((serverCpu + engineCpu) / numCores))
   const totalRss = server.rss + engineRss
+  const physicalTotal = os.totalmem()
+  const physicalFree = os.freemem()
 
   return json(response, 200, {
     cpu: {
@@ -331,8 +352,11 @@ function handleSystem(runner, response) {
       totalMb: Math.round(totalRss / 1048576),
       serverMb: Math.round(server.rss / 1048576),
       engineMb: Math.round(engineRss / 1048576),
+      physicalTotalMb: Math.round(physicalTotal / 1048576),
+      physicalFreeMb: Math.round(physicalFree / 1048576),
       engineWarm: Boolean(engineStats?.warm),
-      activeModel: engineStats?.model || null
+      activeModel: engineStats?.model || null,
+      activeRun: runner?.activeRun || null
     }
   })
 }
@@ -459,10 +483,11 @@ async function handlePreload(runner, response, url) {
   const finish = (message) => {
     if (message.type === 'preloaded' || message.type === 'error') {
       off()
+      offFinish()
       response.end()
     }
   }
-  runner.onMessage(finish)
+  const offFinish = runner.onMessage(finish)
 
   await runner.whenReady()
   runner.send({ action: 'preload', checkpoint, all })
@@ -563,6 +588,26 @@ async function handleRun(runner, response, url) {
   // "Close the model once every image is done" - used by Run All Model so only one
   // checkpoint is ever resident.
   const release = url.searchParams.get('release') === '1'
+  const selectedCheckpoint = CHECKPOINTS.find((item) => item.file === checkpoint)
+  if (!selectedCheckpoint) {
+    send({ type: 'error', message: 'Unknown checkpoint.' })
+    off()
+    return response.end()
+  }
+
+  const freeRamMb = Math.round(os.freemem() / 1048576)
+  if (freeRamMb < selectedCheckpoint.minimumFreeRamMb) {
+    send({
+      type: 'error',
+      message:
+        `${selectedCheckpoint.label} is blocked: ${freeRamMb.toLocaleString()} MB RAM is free, ` +
+        `but this model needs at least ${selectedCheckpoint.minimumFreeRamMb.toLocaleString()} MB free ` +
+        `(its measured peak is about ${selectedCheckpoint.estimatedPeakRamMb.toLocaleString()} MB). ` +
+        'Close other apps or choose q4f16; the lab refuses a run that could crash Windows.'
+    })
+    off()
+    return response.end()
+  }
   // The page sends the NAMES it uploaded; the absolute path is built here, so a
   // request can never aim the runner at an arbitrary file on disk. Each name is
   // re-sanitised rather than trusted.
@@ -607,10 +652,11 @@ async function handleRun(runner, response, url) {
     const follow = (message) => {
       if (message.type === 'result' || message.type === 'error') {
         off()
+        offFollow()
         response.end()
       }
     }
-    runner.onMessage(follow)
+    const offFollow = runner.onMessage(follow)
     return
   }
 
@@ -618,6 +664,7 @@ async function handleRun(runner, response, url) {
   const appendReport = url.searchParams.get('appendReport') === '1'
 
   rememberRun(runId, { status: 'running' })
+  runner.activeRun = { checkpoint: selectedCheckpoint.label, image: 'Preparing image…', startedAt: Date.now() }
 
   // Warm-up is announced so a first-time run says "starting the runner" rather
   // than nothing at all.
@@ -629,11 +676,13 @@ async function handleRun(runner, response, url) {
   const finish = (message) => {
     if (message.type === 'result' || message.type === 'error') {
       off()
+      offFinish()
       rememberRun(runId, { status: 'done', payload: message })
+      runner.activeRun = null
       response.end()
     }
   }
-  runner.onMessage(finish)
+  const offFinish = runner.onMessage(finish)
 }
 
 async function handleOutput(response, route) {
@@ -670,4 +719,20 @@ function json(response, status, payload) {
   response.statusCode = status
   response.setHeader('Content-Type', JSON_HEADERS['Content-Type'])
   response.end(JSON.stringify(payload))
+}
+
+/** Unload native ORT allocations while preserving cached checkpoint files. */
+async function handleRelease(runner, response, request) {
+  if (request.method !== 'POST') return json(response, 405, { error: 'POST only.' })
+
+  await runner.whenReady()
+  const released = await new Promise((resolve) => {
+    const off = runner.onMessage((message) => {
+      if (message.type !== 'released') return
+      off()
+      resolve(Boolean(message.released))
+    })
+    runner.send({ action: 'release' })
+  })
+  return json(response, 200, { released })
 }

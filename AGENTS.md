@@ -252,8 +252,8 @@ Things that are easy to get wrong here:
   InferenceSession holds a large native allocation — measured **8,543 MB** for q4f16 at 1024×1024,
   dropping to **124 MB** after release (99% returned) — which is only given back on `release()` or
   process exit. Nulling alone leaves it to the GC, so cycling checkpoints accumulates memory.
-  `Run All Model` passes `release=1` so each model is closed after its images finish and before the
-  next loads; a plain Run does not, because a warm session is what makes a repeat run fast.
+  The GUI passes `release=1` after every run so the multi-GB native allocation does not stay idle
+  in RAM. A controlled caller can still omit `release` to keep a warm session for repeat-run speed.
   `npm run rmbg2:releasetest` guards this.
 - **Anything emitted AFTER the result is lost, and writing after `response.end()` is unsafe.** The
   plugin ends the SSE response the moment it sees the result, so the release log had to move

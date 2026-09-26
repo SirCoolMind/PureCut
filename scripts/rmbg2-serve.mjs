@@ -103,6 +103,12 @@ export async function serve(session, sharp) {
       return
     }
 
+    if (request.action === 'release') {
+      const released = session.release()
+      send({ type: 'released', released })
+      return
+    }
+
     if (request.action !== 'run') {
       send({ type: 'error', message: `Unknown action: ${request.action}` })
       return
@@ -162,8 +168,9 @@ export async function serve(session, sharp) {
     // soon as it sees the result, so anything emitted afterwards is written to a
     // closed stream and lost (and writing after `end()` is not safe).
     //
-    // A plain Run does NOT ask for it, because keeping the session warm is what makes
-    // a second run on the same image fast.
+    // The GUI releases after every run by default, because the native session can
+    // occupy many GB even while idle. Other clients may opt into a warm session by
+    // omitting `release` when they have sufficient RAM and need repeat-run speed.
     if (request.release) {
       const closed = session.release()
       send({

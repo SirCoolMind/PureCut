@@ -15,7 +15,7 @@
  * Split out of `rmbg2.mjs` when that file crossed the repo's 800-line budget.
  */
 
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { ROOT, OUTPUT_DIR, INPUT_SIZE, NORMALIZE, providerChain, resolveToken } from './rmbg2.config.mjs'
@@ -185,6 +185,8 @@ export class Rmbg2Session {
     // Never resume from or keep a partial file: it would load as a corrupt graph.
     await rm(this.localPath, { force: true })
     await rm(this.metaPath, { force: true })
+    const partialPath = `${this.localPath}.part`
+    await rm(partialPath, { force: true })
 
     // Resolve the token HERE, at the point of use, rather than trusting the
     // constructor to have been handed one.
@@ -220,37 +222,52 @@ export class Rmbg2Session {
     }
 
     const total = Number(response.headers.get('content-length') || 0)
-    const chunks = []
     let seen = 0
     let nextTick = Date.now()
 
-    for await (const chunk of response.body) {
-      chunks.push(chunk)
-      seen += chunk.length
-      if (Date.now() > nextTick) {
-        nextTick = Date.now() + 3000
-        const pct = total ? ` ${((seen / total) * 100).toFixed(1)}%` : ''
-        this.onLog(`weights: ${mb(seen)}${total ? ` / ${mb(total)}` : ''}${pct}`)
+    // Stream straight to disk rather than collecting chunks and Buffer.concat'ing
+    // them. The old approach briefly held two full checkpoints in RAM (nearly
+    // 2 GB for fp32) just before ORT needed its own multi-GB session allocation.
+    let handle
+    let writeError = null
+    try {
+      handle = await open(partialPath, 'w')
+      for await (const chunk of response.body) {
+        await handle.write(chunk)
+        seen += chunk.length
+        if (Date.now() > nextTick) {
+          nextTick = Date.now() + 3000
+          const pct = total ? ` ${((seen / total) * 100).toFixed(1)}%` : ''
+          this.onLog(`weights: ${mb(seen)}${total ? ` / ${mb(total)}` : ''}${pct}`)
+        }
       }
+    } catch (error) {
+      writeError = error
+    } finally {
+      await handle?.close()
     }
 
-    const buffer = Buffer.concat(chunks)
-    if (total && buffer.length !== total) {
-      await rm(this.localPath, { force: true })
-      throw new Error(`Truncated download: got ${buffer.length} of ${total} bytes. Retry.`)
+    if (writeError) {
+      await rm(partialPath, { force: true })
+      throw writeError
     }
 
-    await writeFile(this.localPath, buffer)
+    if (total && seen !== total) {
+      await rm(partialPath, { force: true })
+      throw new Error(`Truncated download: got ${seen} of ${total} bytes. Retry.`)
+    }
+
+    await rename(partialPath, this.localPath)
     // Record the size so a future truncated copy is detected rather than loaded.
     await writeFile(
       this.metaPath,
       JSON.stringify(
-        { model: this.model, file: this.file, bytes: buffer.length, downloadedAt: new Date().toISOString() },
+        { model: this.model, file: this.file, bytes: seen, downloadedAt: new Date().toISOString() },
         null,
         2
       )
     )
-    this.onLog(`weights: saved ${mb(buffer.length)} to rmbg2-lab/.cache - future runs reuse it`)
+    this.onLog(`weights: saved ${mb(seen)} to rmbg2-lab/.cache - future runs reuse it`)
     return this.localPath
   }
 

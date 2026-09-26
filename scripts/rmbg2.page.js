@@ -13,11 +13,8 @@ const filesEl = $('files')
 const modelsOverviewEl = $('modelsOverview')
 const confirmModal = $('confirmModal')
 
-let stream = null
-let files = []
+let stream = null, files = [], checkpoints = [], currentRunningCheckpoint = null
 const picked = new Set()
-let checkpoints = []
-let currentRunningCheckpoint = null
 
 /* ------------------------------- log ------------------------------- */
 let logPristine = true
@@ -135,6 +132,7 @@ function applyDisabled() {
   $('checkpoint').disabled = !idle
   if ($('preload')) $('preload').disabled = !idle
   if ($('preloadAll')) $('preloadAll').disabled = !idle
+  if ($('freeMemory')) $('freeMemory').disabled = !idle
   if ($('clearImages')) $('clearImages').disabled = !idle || files.length === 0
   $('run').textContent = picked.size > 1 ? `Run ${picked.size} images` : 'Run'
 }
@@ -510,8 +508,7 @@ function renderResult(result) {
 
 let runCounter = 0
 const nextRunId = () => `run-${Date.now()}-${++runCounter}`
-
-function runCheckpoint(checkpointFile, { release = false, clearReport = true, appendReport = false } = {}) {
+function runCheckpoint(checkpointFile, { release = true, clearReport = true, appendReport = false } = {}) {
   return new Promise((resolve) => {
     const params = new URLSearchParams({
       runId: nextRunId(),
@@ -556,7 +553,7 @@ $('run').addEventListener('click', async () => {
   updateModelProgress(chosen.file, 0, picked.size, 'Running inference...')
 
   if (chosen) appendLog(`Running ${chosen.label} (${chosen.approxSize}) on ${picked.size} image(s)…`, 'run')
-  const ok = await runCheckpoint(chosen.file, { release: false, clearReport: true, appendReport: false })
+  const ok = await runCheckpoint(chosen.file, { release: true, clearReport: true, appendReport: false })
 
   if (ok) {
     setModelCompleted(chosen.file, picked.size)
@@ -667,6 +664,17 @@ function preload(all, targetCp) {
 if ($('preload')) $('preload').addEventListener('click', () => preload(false))
 $('preloadAll')?.addEventListener('click', () => preload(true))
 $('report').addEventListener('click', () => window.open('/rmbg2/report', '_blank'))
+$('freeMemory')?.addEventListener('click', async () => {
+  if (running) return
+  try {
+    const response = await fetch('/rmbg2/release', { method: 'POST' })
+    const result = await response.json()
+    appendLog(result.released ? 'Model unloaded; native memory released. Downloaded weights are kept.' : 'No model is currently loaded.', result.released ? 'ok' : 'info')
+    await fetchSystemInfo()
+  } catch (error) {
+    appendLog(`Could not free model memory: ${error.message}`, 'err')
+  }
+})
 
 /* ------------------------ detail modal & zoom ------------------------ */
 const detailModal = $('detailModal')
@@ -733,11 +741,15 @@ async function fetchSystemInfo() {
     const sys = await res.json()
     if ($('resCpuPct')) $('resCpuPct').textContent = `${sys.cpu.loadPercent}%`
     if ($('resCpuFill')) $('resCpuFill').style.width = `${Math.min(100, Math.max(0, sys.cpu.loadPercent))}%`
-    if ($('resRamVal')) $('resRamVal').textContent = `${sys.ram.totalMb} MB`
-    const ramFillPct = Math.min(100, Math.round((sys.ram.totalMb / 4096) * 100))
+    if ($('resRamVal')) {
+      $('resRamVal').textContent = `${sys.ram.totalMb} MB / ${sys.ram.physicalTotalMb} MB`
+      $('resRamVal').title = `Free physical memory: ${sys.ram.physicalFreeMb} MB`
+    }
+    const ramFillPct = Math.min(100, Math.round((sys.ram.totalMb / sys.ram.physicalTotalMb) * 100))
     if ($('resRamFill')) $('resRamFill').style.width = `${ramFillPct}%`
     if ($('resServerMb')) $('resServerMb').textContent = sys.ram.serverMb
     if ($('resEngineMb')) $('resEngineMb').textContent = sys.ram.engineMb
+    document.dispatchEvent(new CustomEvent('rmbg2:system', { detail: sys }))
 
     const badge = $('engineStatusBadge')
     if (badge) {

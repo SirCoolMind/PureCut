@@ -19,7 +19,7 @@
 import { mkdir, readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 
-import { INPUT_DIR, INPUT_SIZE, NORMALIZE } from './rmbg2.config.mjs'
+import { INPUT_DIR, INPUT_SIZE, MAX_SOURCE_PIXELS, NORMALIZE } from './rmbg2.config.mjs'
 
 /** Loaded on demand so a missing native install cannot break `--list` / `--help`. */
 export async function importSharp() {
@@ -141,6 +141,16 @@ export async function preprocess(sharp, sourcePath) {
   let sourceHeight = meta.height
   if (meta.orientation && EXIF_SWAP.has(meta.orientation)) {
     ;[sourceWidth, sourceHeight] = [sourceHeight, sourceWidth]
+  }
+
+  const sourcePixels = sourceWidth * sourceHeight
+  if (!Number.isSafeInteger(sourcePixels) || sourcePixels > MAX_SOURCE_PIXELS) {
+    const megapixels = Number.isFinite(sourcePixels) ? (sourcePixels / 1_000_000).toFixed(1) : 'unknown'
+    throw new Error(
+      `Image is ${megapixels} MP; this lab limits full-resolution exports to ` +
+      `${(MAX_SOURCE_PIXELS / 1_000_000).toFixed(1)} MP to prevent RAM exhaustion. ` +
+      'Resize the original image, then try again.'
+    )
   }
 
   const { data, info } = await sharp(buffer)

@@ -6,6 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>PureCut · RMBG-2.0 local lab (dev only)</title>
 <link rel="stylesheet" href="/rmbg2/app.css?v=3">
+<link rel="stylesheet" href="/rmbg2/monitor.css?v=1">
 </head>
 <body>
 
@@ -63,8 +64,8 @@
 
         <div class="field-check">
           <label for="tta">
-            <input type="checkbox" id="tta" checked>
-            <span>Apply TTA Flip Fusion <small>(Refine tricky fingers and edges)</small></span>
+            <input type="checkbox" id="tta">
+            <span>Apply TTA Flip Fusion <small>(Optional: two inference passes; uses more time and RAM)</small></span>
           </label>
         </div>
 
@@ -74,6 +75,7 @@
                   title="Run the selected images through every checkpoint, one after another, to compare them">
             Run All Model
           </button>
+          <button id="freeMemory" class="report-btn" type="button" title="Unload the model but retain downloaded weights">Free RAM</button>
           <button id="report" class="report-btn" disabled title="Enabled once a run has finished">Open full-size report</button>
         </div>
 
@@ -96,6 +98,14 @@
             <span>Server: <strong id="resServerMb">0</strong> MB</span>
             <span class="res-sep">&bull;</span>
             <span>Engine: <strong id="resEngineMb">0</strong> MB</span>
+          </div>
+          <div class="resource-timeline" aria-label="Live process resource history">
+            <div class="timeline-meta"><span id="timelineRun">Idle — no model is running</span><span id="timelineLatest">0 MB</span></div>
+            <svg id="resourceChart" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="Process memory and CPU history">
+              <path id="ramLine" class="timeline-line ram" d=""></path>
+              <path id="cpuLine" class="timeline-line cpu" d=""></path>
+            </svg>
+            <div class="timeline-key"><span><i class="ram-key"></i>RAM</span><span><i class="cpu-key"></i>CPU</span><span>Last 2 min</span></div>
           </div>
         </div>
       </div>
@@ -184,5 +194,6 @@
 </section>
 
 <script type="module" src="/rmbg2/app.js?v=3"></script>
+<script type="module" src="/rmbg2/monitor.js?v=1"></script>
 </body>
 </html>

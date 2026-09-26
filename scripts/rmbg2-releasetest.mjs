@@ -1,6 +1,8 @@
 /**
  * One-off: verify that `release=1` closes the model after its images are finished,
- * and that the next run therefore loads a fresh session.
+ * and that the next run therefore loads a fresh session. The GUI uses this safe
+ * behavior by default; `release=0` remains available for controlled warm-session
+ * tests.
  *
  * This is the "Run All Model" contract: load a model -> run every image -> CLOSE it
  * -> move on. Without the release, cycling checkpoints keeps every model's native
