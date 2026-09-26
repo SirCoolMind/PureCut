@@ -41,7 +41,12 @@ defineProps({
   ttaFlipFusion: { type: Boolean, default: true }
 })
 
-defineEmits(['apply-preset', 'recomposite', 'model-change', 'device-change', 'tta-toggle'])
+const emit = defineEmits(['apply-preset', 'recomposite', 'model-change', 'device-change', 'tta-toggle'])
+
+function handleModelChange(event) {
+  event.target.blur()
+  emit('model-change', event)
+}
 </script>
 
 <template>
@@ -167,7 +172,7 @@ defineEmits(['apply-preset', 'recomposite', 'model-change', 'device-change', 'tt
       <div class="engine-box">
         <div class="engine-row">
           <label><Layers :size="12" /> Model:</label>
-          <select :value="selectedModel" class="sidebar-select" @change="$emit('model-change', $event)">
+          <select :value="selectedModel" class="sidebar-select" @change="handleModelChange">
             <option v-for="m in activeModelOptions" :key="m.id" :value="m.id">
               {{ m.name }}
             </option>
@@ -434,4 +439,24 @@ defineEmits(['apply-preset', 'recomposite', 'model-change', 'device-change', 'tt
 
 .tele-k { color: #94a3b8; }
 .tele-v { font-weight: 600; color: #f1f5f9; }
+
+@media (max-width: 767px) {
+  .sidebar-column {
+    width: 100%;
+    max-width: none;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    padding: 10px;
+  }
+
+  .presets-container {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .preset-card {
+    min-height: 72px;
+  }
+}
 </style>

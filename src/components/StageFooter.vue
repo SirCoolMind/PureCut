@@ -241,7 +241,10 @@ defineEmits([
   justify-content: space-between;
   align-items: center;
   flex-shrink: 0;
+  height: 36px;
   padding-top: 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .slider-hint {
@@ -318,5 +321,26 @@ defineEmits([
 .btn-mini:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+@media (max-width: 767px) {
+  .stage-footer {
+    height: 42px;
+    padding-top: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .footer-info,
+  .brush-toolbar,
+  .select-toolbar {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .slider-hint,
+  .select-hint {
+    padding-inline: 4px;
+    white-space: nowrap;
+  }
 }
 </style>

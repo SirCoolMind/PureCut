@@ -275,5 +275,55 @@ const infoTab = ref('changelog') // 'changelog' | 'roadmap' | 'about' | 'storage
   border-radius: 3px;
 }
 
+@media (max-width: 767px) {
+  .modal-overlay {
+    align-items: flex-start;
+    overflow-y: auto;
+    padding: 12px;
+  }
+
+  .info-modal {
+    width: 100%;
+    max-width: none;
+    min-height: 0;
+    max-height: calc(100dvh - 24px);
+    margin: auto 0;
+    border-radius: 12px;
+  }
+
+  .modal-header {
+    padding: 12px 14px;
+  }
+
+  .modal-tabs {
+    position: relative;
+    z-index: 1;
+    flex: none;
+    gap: 0;
+    padding: 6px 8px 0;
+    background: #0f1729;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .modal-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .modal-tab {
+    flex: 0 0 auto;
+    padding: 9px 10px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .modal-body {
+    position: relative;
+    z-index: 0;
+    padding: 14px;
+  }
+}
 
 </style>

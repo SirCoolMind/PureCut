@@ -36,7 +36,18 @@ defineProps({
   isClearingCache: { type: Boolean, default: false }
 })
 
-defineEmits(['model-change', 'preload', 'clear-cache'])
+const emit = defineEmits(['model-change', 'preload', 'clear-cache'])
+
+/**
+ * Native mobile select menus do not consistently dismiss after a Vue-driven
+ * rerender (the model change can open a confirmation prompt). Blurring the
+ * control first explicitly returns focus to the page, which closes the picker
+ * on Android and iOS while preserving the native desktop behaviour.
+ */
+function handleModelChange(event) {
+  event.target.blur()
+  emit('model-change', event)
+}
 </script>
 
 <template>
@@ -46,7 +57,7 @@ defineEmits(['model-change', 'preload', 'clear-cache'])
         class="model-picker-select" 
         :value="selectedModel"
         :disabled="isProcessing || isPreloading"
-        @change="$emit('model-change', $event)"
+        @change="handleModelChange"
       >
         <option v-for="model in activeModelOptions" :key="model.id" :value="model.id">
           {{ model.name }} ({{ model.size }})
@@ -168,6 +179,39 @@ defineEmits(['model-change', 'preload', 'clear-cache'])
 .model-picker-select option {
   background: #1e293b;
   color: #f8fafc;
+}
+
+@media (max-width: 767px) {
+  .model-status-bar {
+    width: 100%;
+    justify-content: space-between;
+    padding: 5px 8px;
+    border-radius: 10px;
+  }
+
+  .model-picker-wrapper {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .model-picker-select {
+    width: 100%;
+    min-height: 32px;
+    font-size: 12px;
+  }
+
+  .model-indicator {
+    display: none;
+  }
+
+  .cache-status-pill {
+    flex-shrink: 0;
+  }
+
+  .cache-status-pill > span,
+  .btn-clear-cache {
+    display: none;
+  }
 }
 
 .model-picker-chevron {

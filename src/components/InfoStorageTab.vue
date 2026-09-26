@@ -15,7 +15,7 @@
  * root here, so the fade-in animation still runs on every tab switch.
  */
 import { HardDrive, Trash2 } from 'lucide-vue-next'
-import { modelOptions } from '../constants.js'
+import { activeModelOptions } from '../constants.js'
 
 defineProps({
   /** Human-readable total of the on-device model cache. */
@@ -67,14 +67,14 @@ const emit = defineEmits(['clear-cache'])
 
     <div class="storage-models-list">
       <div class="storage-models-title">Available Neural Models</div>
-      <div v-for="m in modelOptions" :key="m.id" class="storage-model-row">
+      <div v-for="m in activeModelOptions" :key="m.id" class="storage-model-row">
         <div class="storage-model-details">
           <div class="storage-model-name">
             {{ m.name }}
             <span v-if="m.id === 'briaai/RMBG-1.4'" class="mini-tag-sota">Default</span>
           </div>
           <div class="storage-model-sub">
-            Size: {{ m.size }} · Engine: {{ m.engine === 'rmbg' ? 'Transformers.js' : '@imgly' }}
+            Size: {{ m.size }} · Engine: {{ m.engine === 'transformers' ? 'Transformers.js' : 'ONNX Runtime' }}
           </div>
         </div>
         <div class="storage-model-status">
@@ -241,5 +241,35 @@ const emit = defineEmits(['clear-cache'])
   background: rgba(255, 255, 255, 0.04);
   color: #64748b;
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 767px) {
+  .storage-summary-card {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .storage-summary-info {
+    min-width: 0;
+  }
+
+  .btn-danger-clear {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .storage-model-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .storage-model-name,
+  .storage-model-sub {
+    overflow-wrap: anywhere;
+  }
 }
 </style>

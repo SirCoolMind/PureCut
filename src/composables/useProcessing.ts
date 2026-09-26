@@ -120,6 +120,28 @@ export function useProcessing({
   // TTA Flip Fusion: enabled by default, changeable in Power User mode
   const ttaFlipFusion = ref(localStorage.getItem(STORAGE_KEYS.ttaFlipFusion) !== 'false')
 
+  /** Transformers.js reports every model asset independently. Only the binary
+   * graph is a meaningful weight-download progress bar; config/tokenizer files
+   * can finish at 100% just before the graph begins at 0%. */
+  function isWeightAsset(progress: any) {
+    const file = String(progress?.file || progress?.name || progress?.url || '').toLowerCase()
+    return /\.(onnx|bin|safetensors)(?:$|[?#])/.test(file)
+  }
+
+  function handleModelProgress(progress: any) {
+    if (progress?.message) statusMessage.value = progress.message
+
+    if (isWeightAsset(progress) && (progress.progress !== undefined || progress.pct !== undefined)) {
+      const raw = progress.pct !== undefined ? progress.pct : progress.progress
+      downloadProgress.isDownloading = true
+      downloadProgress.percent = Math.min(100, Math.max(0, Math.round(raw > 1 ? raw : raw * 100)))
+    }
+
+    if (progress?.status === 'inference') {
+      downloadProgress.isDownloading = false
+    }
+  }
+
   function toggleTtaFlipFusion() {
     ttaFlipFusion.value = !ttaFlipFusion.value
     localStorage.setItem(STORAGE_KEYS.ttaFlipFusion, String(ttaFlipFusion.value))
@@ -132,18 +154,13 @@ export function useProcessing({
   async function handlePreload() {
     if (isPreloading.value || isProcessing.value) return
     isPreloading.value = true
-    downloadProgress.isDownloading = true
+    downloadProgress.isDownloading = false
     downloadProgress.percent = 0
-    statusMessage.value = `Downloading ${currentModelMeta.value.name.split(' ')[0]} weights (${currentModelMeta.value.size})...`
+    statusMessage.value = `Preparing ${currentModelMeta.value.name}...`
 
     try {
       await preloadTransformersModel(selectedModel.value, currentModelMeta.value.dtype, currentModelMeta.value.disableOptimization, selectedDevice.value, (progress) => {
-        if (progress && (progress.progress !== undefined || progress.pct !== undefined)) {
-          const raw = progress.pct !== undefined ? progress.pct : progress.progress
-          const pct = Math.min(100, Math.max(0, Math.round(raw > 1 ? raw : raw * 100)))
-          downloadProgress.percent = pct
-          statusMessage.value = `Downloading ${currentModelMeta.value.name.split(' ')[0]} weights: ${pct}%...`
-        }
+        handleModelProgress(progress)
       })
       cachedModels[selectedModel.value] = true
       localStorage.setItem(cachedModelKey(selectedModel.value), 'true')
@@ -170,10 +187,10 @@ export function useProcessing({
     undoHistory.value = []
     isProcessing.value = true
     downloadProgress.percent = 0
-    downloadProgress.isDownloading = !currentModelCached.value
+    downloadProgress.isDownloading = false
     statusMessage.value = currentModelCached.value
       ? 'Analyzing image with AI...'
-      : `Downloading ${currentModelMeta.value.name.split(' ')[0]} model (${currentModelMeta.value.size})...`
+      : `Preparing ${currentModelMeta.value.name}...`
 
     const startHeap = (typeof window !== 'undefined' && window.performance && (window.performance as any).memory)
       ? (window.performance as any).memory.usedJSHeapSize
@@ -211,13 +228,7 @@ export function useProcessing({
         currentModelMeta.value.dtype,
         currentModelMeta.value.disableOptimization,
         selectedDevice.value,
-        (p) => {
-          if (p.message) statusMessage.value = p.message
-          if (p && (p.progress !== undefined || p.pct !== undefined)) {
-            const raw = p.pct !== undefined ? p.pct : p.progress
-            downloadProgress.percent = Math.min(100, Math.max(0, Math.round(raw > 1 ? raw : raw * 100)))
-          }
-        },
+        handleModelProgress,
         { tta: ttaFlipFusion.value }
       )
       rawMaskBlob = result.maskBlob

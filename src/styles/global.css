@@ -75,6 +75,24 @@ html, body, #app {
   transition: zoom 0.2s ease;
 }
 
+/* CSS zoom is useful for the desktop accessibility control, but it compounds
+   viewport sizing on narrow screens. Keep the phone layout at its actual CSS
+   width and let its responsive rules control the arrangement instead. */
+@media (max-width: 767px) {
+  html[data-font-size] {
+    --ui-zoom: 1;
+  }
+
+  html, body, #app {
+    min-height: 100dvh;
+  }
+
+  .app-shell {
+    width: 100vw !important;
+    height: 100dvh !important;
+  }
+}
+
 /* Model Change Confirmation Prompt Modal (Solid Dark UI/UX Card) */
 .prompt-modal-overlay {
   position: fixed;

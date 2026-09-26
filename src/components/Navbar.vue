@@ -388,6 +388,62 @@ defineEmits([
   animation: updateDotPulse 1.6s infinite;
 }
 
+@media (max-width: 767px) {
+  .navbar {
+    height: auto;
+    min-height: 0;
+    padding: 8px 10px;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .brand {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .brand-title {
+    min-width: 0;
+  }
+
+  .btn-benchmark-nav {
+    display: none;
+  }
+
+  .model-status-bar {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .navbar-right-actions {
+    gap: 4px;
+  }
+
+  .btn-browser-zoom,
+  .mode-btn {
+    min-height: 32px;
+  }
+
+  .mode-btn {
+    padding-inline: 7px;
+  }
+
+  .mode-btn:last-child {
+    font-size: 0;
+    padding-inline: 8px;
+  }
+
+  .mode-btn:last-child :deep(svg) {
+    width: 15px;
+    height: 15px;
+  }
+
+  .mode-toggle-group > .btn-font-scale {
+    display: none;
+  }
+}
+
 @keyframes updateDotPulse {
   0% { transform: scale(0.9); opacity: 0.8; box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.8); }
   70% { transform: scale(1.15); opacity: 1; box-shadow: 0 0 0 5px rgba(56, 189, 248, 0); }

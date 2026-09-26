@@ -350,4 +350,52 @@ defineEmits(['toggle-subjects', 'update:activeTool', 'update:previewBg', 'reset'
   opacity: 0.95;
   transform: translateY(-1px);
 }
+
+@media (max-width: 767px) {
+  .stage-header {
+    gap: 5px;
+  }
+
+  .meta-row {
+    align-items: flex-start;
+  }
+
+  .meta-tags {
+    width: 100%;
+  }
+
+  .file-tag {
+    max-width: min(52vw, 220px);
+  }
+
+  .header-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .btn-secondary,
+  .btn-cta {
+    min-height: 36px;
+    justify-content: center;
+    flex: 1;
+    padding-inline: 8px;
+  }
+
+  .controls-row {
+    align-items: stretch;
+  }
+
+  .tool-switch-bar,
+  .backdrop-controls {
+    width: 100%;
+  }
+
+  .tool-btn,
+  .bg-btn {
+    min-height: 36px;
+    flex: 1;
+    justify-content: center;
+    padding-inline: 5px;
+  }
+}
 </style>
