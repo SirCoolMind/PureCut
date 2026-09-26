@@ -116,7 +116,13 @@ export async function serve(session, sharp) {
       return
     }
 
-    const { results, reportPath } = await runBatch({ session, sharp, inputs, onLog: session.onLog })
+    const { results, reportPath } = await runBatch({
+      session,
+      sharp,
+      inputs,
+      onLog: session.onLog,
+      tta: Boolean(request.tta)
+    })
 
     // `Run All Model` asks for this: every image for this checkpoint is done, so the
     // model can be closed before the next one loads. Releasing here (rather than at
@@ -149,6 +155,7 @@ export async function serve(session, sharp) {
         checkpoint: r.checkpoint || null,
         width: r.width,
         height: r.height,
+        tta: Boolean(r.tta),
         timings: r.timings || null,
         mask: r.mask || null,
         files: r.files || null,

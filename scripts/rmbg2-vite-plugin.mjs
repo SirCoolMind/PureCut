@@ -486,6 +486,7 @@ async function handleRun(runner, response, url) {
   const runId = url.searchParams.get('runId') || ''
   const checkpoint = url.searchParams.get('checkpoint') || ''
   const provider = url.searchParams.get('provider') || ''
+  const tta = url.searchParams.get('tta') === '1'
   // "Close the model once every image is done" - used by Run All Model so only one
   // checkpoint is ever resident.
   const release = url.searchParams.get('release') === '1'
@@ -546,7 +547,7 @@ async function handleRun(runner, response, url) {
   // than nothing at all.
   send({ type: 'log', text: 'runner: starting (first run also downloads the checkpoint)' })
   await runner.whenReady()
-  runner.send({ action: 'run', inputs, checkpoint, provider, release })
+  runner.send({ action: 'run', inputs, checkpoint, provider, release, tta })
 
   // The batch is one request/one result, so close the stream when it lands.
   const finish = (message) => {

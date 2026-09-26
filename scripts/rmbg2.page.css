@@ -162,6 +162,10 @@
 
   .preload-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 9px; flex: 0 0 auto; }
   .preload-row button { font-size: 12.5px; }
+  .field-check { margin-top: 9px; font-size: 12px; color: var(--text); }
+  .field-check label { display: flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
+  .field-check input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+  .field-check small { color: var(--muted); }
 
   /* Run is the primary action; Run All Model is narrower and warning-coloured
      because it is a much longer job (one session reload per checkpoint). */

@@ -315,6 +315,7 @@ function renderResult(result) {
     const sep = pill(`${result.mask.separation} separation`, weak ? 'warn' : '')
     sep.title = `Mask range ${result.mask.min} … ${result.mask.max}. "Strong" means it reaches near 0 and near 1.`
     head.appendChild(sep)
+    if (result.tta) head.appendChild(pill('TTA refined', 'ok'))
   }
   card.appendChild(head)
 
@@ -390,7 +391,8 @@ function runCheckpoint(checkpointFile, { release = false } = {}) {
       runId: nextRunId(),
       checkpoint: checkpointFile,
       inputs: [...picked].join(','),
-      release: release ? '1' : '0'
+      release: release ? '1' : '0',
+      tta: $('tta')?.checked ? '1' : '0'
     })
 
     openStream(

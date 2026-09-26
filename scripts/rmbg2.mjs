@@ -54,7 +54,8 @@ function parseArgs(argv) {
     serve: false,
     preload: false,
     allCheckpoints: false,
-    checkProviders: false
+    checkProviders: false,
+    tta: false
   }
 
   for (const arg of argv) {
@@ -63,6 +64,7 @@ function parseArgs(argv) {
     else if (arg === '--serve') opts.serve = true
     else if (arg === '--preload') opts.preload = true
     else if (arg === '--all') opts.allCheckpoints = true
+    else if (arg === '--tta') opts.tta = true
     else if (arg === '--check-providers') opts.checkProviders = true
     else if (arg === '--no-report') opts.report = false
     else if (arg.startsWith('--token=')) opts.token = arg.slice(8)
@@ -91,6 +93,7 @@ Flags
   --provider=cpu|dml     default ${DEFAULT_PROVIDER}; dml is the GPU path on Windows
   --preload              download the checkpoint and stop - no inference
   --all                  with --preload: fetch every checkpoint
+  --tta                  two-pass flip fusion (TTA) to refine tricky fingers and edges
   --check-providers      print which providers this install can actually use
   --no-report            skip report.html
   --serve                JSON protocol for the dev-only page (see npm run dev)
@@ -260,7 +263,7 @@ async function main() {
   log(`inputs: ${inputs.length} image(s)`)
 
   const session = new Rmbg2Session({ ...withToken, onLog: log })
-  const { results } = await runBatch({ session, sharp, inputs, onLog: log, writeReport: opts.report })
+  const { results } = await runBatch({ session, sharp, inputs, onLog: log, writeReport: opts.report, tta: opts.tta })
 
   const failed = results.filter((r) => r.error).length
   log('')

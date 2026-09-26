@@ -18,7 +18,7 @@
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-import { ROOT, OUTPUT_DIR, INPUT_SIZE, providerChain, resolveToken } from './rmbg2.config.mjs'
+import { ROOT, OUTPUT_DIR, INPUT_SIZE, NORMALIZE, providerChain, resolveToken } from './rmbg2.config.mjs'
 import {
   composeCutout,
   extractMask,
@@ -312,11 +312,11 @@ export class Rmbg2Session {
     return this.session
   }
 
-  async run(sourcePath, sharp) {
+  async run(sourcePath, sharp, { tta = false } = {}) {
     const ort = await importOrt()
     const session = await this.load()
 
-    this.onLog(`preprocess: ${path.basename(sourcePath)} -> ${INPUT_SIZE}x${INPUT_SIZE} BGR`)
+    this.onLog(`preprocess: ${path.basename(sourcePath)} -> ${INPUT_SIZE}x${INPUT_SIZE}`)
     let started = Date.now()
     const pre = await preprocess(sharp, sourcePath)
     const preprocessMs = Date.now() - started
@@ -328,13 +328,61 @@ export class Rmbg2Session {
     this.onLog('inference: running the graph (minutes on CPU is normal)')
     started = Date.now()
     const outputs = await session.run(feeds)
-    const inferenceMs = Date.now() - started
+    let inferenceMs = Date.now() - started
 
     started = Date.now()
     const mask = extractMask(outputs, session.outputNames)
-    const postprocessMs = Date.now() - started
+    let postprocessMs = Date.now() - started
 
-    return { pre, mask, timings: { preprocessMs, inferenceMs, postprocessMs } }
+    if (tta) {
+      this.onLog('inference: running flip pass (TTA) to refine tricky fingers and edges')
+      started = Date.now()
+      const { data: flopData } = await sharp(pre.buffer)
+        .rotate()
+        .flop()
+        .resize(INPUT_SIZE, INPUT_SIZE, { fit: 'fill' })
+        .removeAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true })
+
+      const plane = INPUT_SIZE * INPUT_SIZE
+      const tensorFlop = new Float32Array(3 * plane)
+      const { mean, std } = NORMALIZE
+      for (let c = 0; c < 3; c++) {
+        const offset = c * plane
+        for (let i = 0; i < plane; i++) {
+          tensorFlop[offset + i] = (flopData[i * 3 + c] / 255 - mean[c]) / std[c]
+        }
+      }
+      const flopOutputs = await session.run({
+        [session.inputNames[0]]: new ort.Tensor('float32', tensorFlop, [1, 3, INPUT_SIZE, INPUT_SIZE])
+      })
+      inferenceMs += Date.now() - started
+
+      started = Date.now()
+      const maskFlop = extractMask(flopOutputs, session.outputNames)
+      const unfloppedBytes = (await sharp(Buffer.from(maskFlop.bytes), {
+        raw: { width: INPUT_SIZE, height: INPUT_SIZE, channels: 1 }
+      })
+        .flop()
+        .toColourspace('b-w')
+        .raw()
+        .toBuffer({ resolveWithObject: true })).data
+
+      let sum = 0
+      let aboveHalf = 0
+      for (let i = 0; i < plane; i++) {
+        const merged = Math.max(mask.bytes[i], unfloppedBytes[i])
+        mask.bytes[i] = merged
+        sum += merged / 255
+        if (merged >= 128) aboveHalf++
+      }
+      mask.stats.meanAlpha = Number((sum / plane).toFixed(5))
+      mask.stats.coverage = Number((aboveHalf / plane).toFixed(5))
+      postprocessMs += Date.now() - started
+    }
+
+    return { pre, mask, timings: { preprocessMs, inferenceMs, postprocessMs }, tta }
   }
 }
 
@@ -342,16 +390,16 @@ export class Rmbg2Session {
  * Batch -> files + report
  * ------------------------------------------------------------------ */
 
-export async function runBatch({ session, sharp, inputs, onLog, writeReport = true }) {
+export async function runBatch({ session, sharp, inputs, onLog, writeReport = true, tta = false }) {
   await mkdir(OUTPUT_DIR, { recursive: true })
   const results = []
 
   for (const [index, sourcePath] of inputs.entries()) {
     const base = path.basename(sourcePath).replace(/\.[^.]+$/, '')
-    onLog(`-- [${index + 1}/${inputs.length}] ${path.basename(sourcePath)}`)
+    onLog(`-- [${index + 1}/${inputs.length}] ${path.basename(sourcePath)}${tta ? ' (TTA)' : ''}`)
 
     try {
-      const { pre, mask, timings } = await session.run(sourcePath, sharp)
+      const { pre, mask, timings } = await session.run(sourcePath, sharp, { tta })
       const maskPng = await maskToPng(sharp, mask)
       const cutoutPng = await composeCutout(
         sharp,
@@ -378,6 +426,7 @@ export async function runBatch({ session, sharp, inputs, onLog, writeReport = tr
         // cards for the same image, and without this they would be indistinguishable.
         checkpoint: session.file,
         timings: { ...timings, provider: session.provider },
+        tta: Boolean(tta),
         mask: mask.stats,
         files: { cutout: `${base}-cutout.png`, mask: `${base}-mask.png` },
         previews: {
