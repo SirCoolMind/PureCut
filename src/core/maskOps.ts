@@ -259,3 +259,37 @@ export function snapToNearestEdge(
 
   return { x: bestX, y: bestY }
 }
+
+/**
+ * Test-Time Augmentation (TTA) Flip Fusion:
+ * In-place merges `flopData` (which was inferred on a horizontally flipped image)
+ * into `maskData` by unflipping `flopData` horizontally and taking the pixel-wise maximum.
+ *
+ * @param maskData The primary mask buffer (modified in place)
+ * @param flopData The mask buffer from the flipped image
+ * @param width Width in pixels
+ * @param height Height in pixels
+ * @param channels Number of channels per pixel (1 for grayscale, 4 for RGBA, etc.)
+ */
+export function fuseTtaMask(
+  maskData: Uint8Array | Uint8ClampedArray | Float32Array | number[],
+  flopData: Uint8Array | Uint8ClampedArray | Float32Array | number[],
+  width: number,
+  height: number,
+  channels: number = 1
+): void {
+  for (let y = 0; y < height; y++) {
+    const rowOffset = y * width
+    for (let x = 0; x < width; x++) {
+      const idx1 = (rowOffset + x) * channels
+      const idx2 = (rowOffset + (width - 1 - x)) * channels
+      for (let c = 0; c < channels; c++) {
+        const val1 = maskData[idx1 + c]!
+        const val2 = flopData[idx2 + c]!
+        if (val2 > val1) {
+          maskData[idx1 + c] = val2
+        }
+      }
+    }
+  }
+}

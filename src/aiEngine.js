@@ -1,6 +1,7 @@
 import { pipeline, env, AutoModelForSemanticSegmentation, RawImage } from '@huggingface/transformers';
 import { STORAGE_KEYS } from './core/storageKeys.js';
 import { modelOptions } from './constants.js';
+import { fuseTtaMask } from './core/maskOps.js';
 import { isSkillsafeModel, preloadSkillsafeModel, runSkillsafeModel, resetSkillsafeModels } from './skillsafeEngine.js';
 
 /**
@@ -113,9 +114,9 @@ export async function preloadTransformersModel(modelId, dtype = 'q8', disableOpt
 /**
  * Run Transformers.js Models (RMBG, ModNet, BiRefNet, U2Net)
  */
-export async function runTransformersModel(file, modelId, dtype = 'q8', disableOptimization = false, device = 'webgpu', onProgress) {
+export async function runTransformersModel(file, modelId, dtype = 'q8', disableOptimization = false, device = 'webgpu', onProgress, { tta = true } = {}) {
   if (isSkillsafeModel(modelId)) {
-    return await runSkillsafeModel(file, modelId, device, onProgress);
+    return await runSkillsafeModel(file, modelId, device, onProgress, { tta });
   }
 
   const objectUrl = URL.createObjectURL(file);
@@ -159,12 +160,44 @@ export async function runTransformersModel(file, modelId, dtype = 'q8', disableO
       }
     }
 
-    if (onProgress) onProgress({ status: 'inference', message: `Executing neural segmentation (${effectiveDevice === 'webgpu' ? 'WebGPU' : 'CPU WASM'})...` });
+    const runInferencePass = async (input) => {
+      try {
+        return await pipeInstance(input);
+      } catch (err) {
+        if (effectiveDevice === 'webgpu') {
+          console.warn('WebGPU inference failed. Falling back automatically to CPU (WASM)...', err);
+          delete loadedPipelines[pipelineKey];
+          effectiveDevice = 'wasm';
+          pipelineKey = `${modelId}_wasm`;
+
+          if (onProgress) onProgress({ status: 'fallback', message: 'GPU shader/limit reached. Retrying automatically on CPU (WASM)...' });
+          try {
+            pipeInstance = await loadPipeline(effectiveDevice);
+            return await pipeInstance(input);
+          } catch (wasmErr) {
+            delete loadedPipelines[pipelineKey];
+            console.error('CPU WASM fallback failed:', wasmErr);
+            throw wasmErr;
+          }
+        } else {
+          delete loadedPipelines[pipelineKey];
+          console.error('Inference crashed:', err);
+          let friendlyMessage = err?.message || 'Processing Error.';
+          if (friendlyMessage.includes('bad_alloc')) {
+            friendlyMessage = `Ran out of memory trying to process this model. Please select a lighter model.`;
+          } else if (friendlyMessage.includes('maxStorageBuffersPerShaderStage')) {
+            friendlyMessage = `Your GPU does not support this specific model (Hardware limitation: maxStorageBuffersPerShaderStage).`;
+          }
+          throw new Error(friendlyMessage);
+        }
+      }
+    };
 
     let inputToProcess = objectUrl;
     let needsMaskUpscale = false;
     let targetWidth = 0;
     let targetHeight = 0;
+    let baseCanvas = null;
 
     // In browsers, 32-bit WASM memory limit (2GB address space) and WebGPU buffers crash with std::bad_alloc
     // on large images for models like MODNet, BiRefNet, and RMBG.
@@ -182,73 +215,35 @@ export async function runTransformersModel(file, modelId, dtype = 'q8', disableO
         targetWidth = tempImg.naturalWidth || tempImg.width;
         targetHeight = tempImg.naturalHeight || tempImg.height;
 
-        // In browsers, 32-bit WASM linear memory limit is 2GB-4GB.
-        // BiRefNet Lite and MODNet are memory-intensive, so downscale to <= 512px or <= 768px to prevent std::bad_alloc:
-        // - BiRefNet: 512px (fast, ultra-low memory, zero OOM)
-        // - MODNet: 768px (ideal portrait matting scale)
-        // - RMBG-1.4: 1024px (handles high resolution easily)
-        //
-        // Note: a model's own preprocessor_config.json can override this and resize the network
-        // input back up regardless of what we do here - which is how a 109 MB checkpoint still
-        // OOMs. See "Model catalogue" in AGENTS.md before touching this ladder.
         const maxDimension = modelId.includes('BiRefNet') ? 512 : (modelId.includes('modnet') ? 768 : 1024);
+        let processW = targetWidth;
+        let processH = targetHeight;
         if (targetWidth > maxDimension || targetHeight > maxDimension) {
           const scale = maxDimension / Math.max(targetWidth, targetHeight);
-          const scaledW = Math.round(targetWidth * scale);
-          const scaledH = Math.round(targetHeight * scale);
-
-          const scaledCanvas = document.createElement('canvas');
-          scaledCanvas.width = scaledW;
-          scaledCanvas.height = scaledH;
-          const sCtx = scaledCanvas.getContext('2d');
-          sCtx.drawImage(tempImg, 0, 0, scaledW, scaledH);
-
-          // RawImage.fromCanvas operates natively in browser without network fetch!
-          inputToProcess = RawImage.fromCanvas(scaledCanvas);
+          processW = Math.round(targetWidth * scale);
+          processH = Math.round(targetHeight * scale);
           needsMaskUpscale = true;
-          console.log(`[PureCut] Downscaled input from ${targetWidth}x${targetHeight} to ${scaledW}x${scaledH} for ${modelId}`);
-        } else {
-          inputToProcess = objectUrl;
+          console.log(`[PureCut] Downscaled input from ${targetWidth}x${targetHeight} to ${processW}x${processH} for ${modelId}`);
         }
+
+        baseCanvas = document.createElement('canvas');
+        baseCanvas.width = processW;
+        baseCanvas.height = processH;
+        const sCtx = baseCanvas.getContext('2d');
+        sCtx.drawImage(tempImg, 0, 0, processW, processH);
+
+        // RawImage.fromCanvas operates natively in browser without network fetch!
+        inputToProcess = RawImage.fromCanvas(baseCanvas);
       }
     } catch (preprocessErr) {
       console.warn('[PureCut] Image downscaling preprocess notice:', preprocessErr);
       inputToProcess = objectUrl;
     }
 
-    let result;
-    try {
-      result = await pipeInstance(inputToProcess);
-    } catch (err) {
-      // If inference crashed on WebGPU (e.g., Pad node shader error, maxStorageBuffersPerShaderStage, or OOM), auto-fallback to CPU/WASM
-      if (effectiveDevice === 'webgpu') {
-        console.warn('WebGPU inference failed. Falling back automatically to CPU (WASM)...', err);
-        delete loadedPipelines[pipelineKey];
-        effectiveDevice = 'wasm';
-        pipelineKey = `${modelId}_wasm`;
+    if (onProgress) onProgress({ status: 'inference', message: `Executing neural segmentation${tta ? ' (Pass 1/2: Standard)' : ''} (${effectiveDevice === 'webgpu' ? 'WebGPU' : 'CPU WASM'})...` });
 
-        if (onProgress) onProgress({ status: 'fallback', message: 'GPU shader/limit reached. Retrying automatically on CPU (WASM)...' });
-        try {
-          pipeInstance = await loadPipeline(effectiveDevice);
-          result = await pipeInstance(inputToProcess);
-        } catch (wasmErr) {
-          delete loadedPipelines[pipelineKey];
-          console.error('CPU WASM fallback failed:', wasmErr);
-          throw wasmErr;
-        }
-      } else {
-        delete loadedPipelines[pipelineKey];
-        console.error('Inference crashed:', err);
-        let friendlyMessage = err?.message || 'Processing Error.';
-        if (friendlyMessage.includes('bad_alloc')) {
-          friendlyMessage = `Ran out of memory trying to process this model. Please select a lighter model.`;
-        } else if (friendlyMessage.includes('maxStorageBuffersPerShaderStage')) {
-          friendlyMessage = `Your GPU does not support this specific model (Hardware limitation: maxStorageBuffersPerShaderStage).`;
-        }
-        throw new Error(friendlyMessage);
-      }
-    }
-    
+    const result = await runInferencePass(inputToProcess);
+
     // Pipeline usually returns an array of objects for image-segmentation, e.g., [{ mask: RawImage, label: '...' }, ...]
     // Or it might return a single object. Let's handle both.
     let maskImage;
@@ -258,6 +253,39 @@ export async function runTransformersModel(file, modelId, dtype = 'q8', disableO
       maskImage = fg.mask;
     } else {
       maskImage = result.mask || result;
+    }
+
+    // TTA Flip Fusion: Second pass with horizontally mirrored input
+    if (tta && baseCanvas && maskImage) {
+      try {
+        if (onProgress) onProgress({ status: 'inference', message: `Executing neural segmentation (Pass 2/2: TTA Flip Fusion)...` });
+
+        const flipCanvas = document.createElement('canvas');
+        flipCanvas.width = baseCanvas.width;
+        flipCanvas.height = baseCanvas.height;
+        const fCtx = flipCanvas.getContext('2d');
+        fCtx.translate(baseCanvas.width, 0);
+        fCtx.scale(-1, 1);
+        fCtx.drawImage(baseCanvas, 0, 0);
+
+        const flippedInput = RawImage.fromCanvas(flipCanvas);
+        const flopResult = await runInferencePass(flippedInput);
+
+        let maskImageFlop;
+        if (Array.isArray(flopResult)) {
+          const fg = flopResult.find(r => r.label === 'foreground') || flopResult[0];
+          maskImageFlop = fg.mask;
+        } else {
+          maskImageFlop = flopResult.mask || flopResult;
+        }
+
+        if (maskImageFlop && maskImageFlop.data && maskImage.data &&
+            maskImage.width === maskImageFlop.width && maskImage.height === maskImageFlop.height) {
+          fuseTtaMask(maskImage.data, maskImageFlop.data, maskImage.width, maskImage.height, maskImage.channels || 1);
+        }
+      } catch (ttaErr) {
+        console.warn('[PureCut] TTA flip pass skipped due to notice:', ttaErr);
+      }
     }
 
     // Upscale mask back to original dimensions if resized for memory stability

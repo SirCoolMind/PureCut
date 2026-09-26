@@ -57,7 +57,7 @@ export const SKILLSAFE_MODELS = {
     outputName: 'output_image',
     mean: [0.5, 0.5, 0.5],
     std: [1.0, 1.0, 1.0],
-    preferredDevice: 'webgpu' // Full WebGPU support with fallback to wasm
+    preferredDevice: 'wasm' // ceil_mode MaxPool is not supported by ONNX Runtime WebGPU JSEP
   }
 };
 
@@ -261,16 +261,34 @@ export async function preloadSkillsafeModel(modelId, device = 'webgpu', onProgre
 /**
  * Run SkillSafe model inference and return mask blob with original dimensions
  */
-export async function runSkillsafeModel(file, modelId, device = 'webgpu', onProgress) {
+export async function runSkillsafeModel(file, modelId, device = 'webgpu', onProgress, { tta = true } = {}) {
   const objectUrl = URL.createObjectURL(file);
 
   try {
-    const { session, device: effectiveDevice, config } = await getOrCreateSession(modelId, device, onProgress);
+    let { session: currentSession, device: currentDevice, config } = await getOrCreateSession(modelId, device, onProgress);
+
+    const executeOrtRun = async (inputFeeds) => {
+      try {
+        return await currentSession.run(inputFeeds);
+      } catch (runErr) {
+        if (currentDevice === 'webgpu') {
+          console.warn(`[PureCut] WebGPU execution failed for ${config.name}, retrying on WASM:`, runErr);
+          if (onProgress) {
+            onProgress({ status: 'fallback', message: 'GPU execution failed. Retrying on CPU WASM...' });
+          }
+          const wasmRes = await getOrCreateSession(modelId, 'wasm', onProgress);
+          currentSession = wasmRes.session;
+          currentDevice = 'wasm';
+          return await currentSession.run(inputFeeds);
+        }
+        throw runErr;
+      }
+    };
 
     if (onProgress) {
       onProgress({
         status: 'inference',
-        message: `Executing ${config.name} neural cutout (${effectiveDevice === 'webgpu' ? 'WebGPU' : 'CPU WASM'})...`
+        message: `Executing ${config.name} neural cutout${tta ? ' (Pass 1/2: Standard)' : ''} (${currentDevice === 'webgpu' ? 'WebGPU' : 'CPU WASM'})...`
       });
     }
 
@@ -306,29 +324,15 @@ export async function runSkillsafeModel(file, modelId, device = 'webgpu', onProg
       floatData[channelSize * 2 + i] = (imgData[idx + 2] / 255.0 - mean[2]) / std[2];
     }
 
-    const inputName = config.inputName || session.inputNames[0];
+    const inputName = config.inputName || currentSession.inputNames[0];
     const inputTensor = new ort.Tensor('float32', floatData, [1, 3, inputHeight, inputWidth]);
     const feeds = { [inputName]: inputTensor };
 
-    let results;
-    try {
-      results = await session.run(feeds);
-    } catch (runErr) {
-      if (effectiveDevice === 'webgpu') {
-        console.warn(`[PureCut] WebGPU execution failed for ${config.name}, retrying on WASM:`, runErr);
-        if (onProgress) {
-          onProgress({ status: 'fallback', message: 'GPU execution failed. Retrying on CPU WASM...' });
-        }
-        const wasmRes = await getOrCreateSession(modelId, 'wasm', onProgress);
-        results = await wasmRes.session.run(feeds);
-      } else {
-        throw runErr;
-      }
-    }
+    const results = await executeOrtRun(feeds);
 
     // Extract primary prediction mask
-    const outputName = config.outputName || session.outputNames[0];
-    const outputTensor = results[outputName] || results[session.outputNames[0]];
+    const outputName = config.outputName || currentSession.outputNames[0];
+    const outputTensor = results[outputName] || results[currentSession.outputNames[0]];
     const rawMask = outputTensor.data;
 
     // Normalize output mask to [0, 1] range (normPRED min-max normalization)
@@ -341,6 +345,53 @@ export async function runSkillsafeModel(file, modelId, device = 'webgpu', onProg
     }
     const range = max - min || 1;
 
+    // TTA Flip Fusion: Second pass with horizontally mirrored input
+    let rawMaskFlop = null;
+    let minFlop = Infinity;
+    let maxFlop = -Infinity;
+    let rangeFlop = 1;
+
+    if (tta) {
+      try {
+        if (onProgress) {
+          onProgress({
+            status: 'inference',
+            message: `Executing ${config.name} neural cutout (Pass 2/2: TTA Flip Fusion)...`
+          });
+        }
+        const flipCanvas = document.createElement('canvas');
+        flipCanvas.width = inputWidth;
+        flipCanvas.height = inputHeight;
+        const fCtx = flipCanvas.getContext('2d', { willReadFrequently: true });
+        fCtx.translate(inputWidth, 0);
+        fCtx.scale(-1, 1);
+        fCtx.drawImage(canvas, 0, 0);
+
+        const flipImgData = fCtx.getImageData(0, 0, inputWidth, inputHeight).data;
+        const floatDataFlop = new Float32Array(3 * channelSize);
+        for (let i = 0; i < channelSize; i++) {
+          const idx = i * 4;
+          floatDataFlop[i] = (flipImgData[idx] / 255.0 - mean[0]) / std[0];
+          floatDataFlop[channelSize + i] = (flipImgData[idx + 1] / 255.0 - mean[1]) / std[1];
+          floatDataFlop[channelSize * 2 + i] = (flipImgData[idx + 2] / 255.0 - mean[2]) / std[2];
+        }
+
+        const inputTensorFlop = new ort.Tensor('float32', floatDataFlop, [1, 3, inputHeight, inputWidth]);
+        const flopResults = await executeOrtRun({ [inputName]: inputTensorFlop });
+        const flopTensor = flopResults[outputName] || flopResults[currentSession.outputNames[0]];
+        rawMaskFlop = flopTensor.data;
+
+        for (let i = 0; i < rawMaskFlop.length; i++) {
+          const v = rawMaskFlop[i];
+          if (v < minFlop) minFlop = v;
+          if (v > maxFlop) maxFlop = v;
+        }
+        rangeFlop = maxFlop - minFlop || 1;
+      } catch (ttaErr) {
+        console.warn(`[PureCut] SkillSafe TTA pass skipped for ${config.name}:`, ttaErr);
+      }
+    }
+
     // Render RGBA mask canvas
     const maskCanvas = document.createElement('canvas');
     maskCanvas.width = inputWidth;
@@ -349,14 +400,24 @@ export async function runSkillsafeModel(file, modelId, device = 'webgpu', onProg
     const maskImageData = maskCtx.createImageData(inputWidth, inputHeight);
     const dst = maskImageData.data;
 
-    for (let i = 0; i < rawMask.length; i++) {
-      const norm = (rawMask[i] - min) / range;
-      const alpha = Math.round(Math.min(255, Math.max(0, norm * 255)));
-      const idx = i * 4;
-      dst[idx] = 255;
-      dst[idx + 1] = 255;
-      dst[idx + 2] = 255;
-      dst[idx + 3] = alpha;
+    for (let y = 0; y < inputHeight; y++) {
+      const rowOffset = y * inputWidth;
+      for (let x = 0; x < inputWidth; x++) {
+        const idx1 = rowOffset + x;
+        const norm1 = (rawMask[idx1] - min) / range;
+        let finalNorm = norm1;
+        if (rawMaskFlop) {
+          const idx2 = rowOffset + (inputWidth - 1 - x);
+          const norm2 = (rawMaskFlop[idx2] - minFlop) / rangeFlop;
+          finalNorm = Math.max(norm1, norm2);
+        }
+        const alpha = Math.round(Math.min(255, Math.max(0, finalNorm * 255)));
+        const pIdx = idx1 * 4;
+        dst[pIdx] = 255;
+        dst[pIdx + 1] = 255;
+        dst[pIdx + 2] = 255;
+        dst[pIdx + 3] = alpha;
+      }
     }
     maskCtx.putImageData(maskImageData, 0, 0);
 
@@ -375,7 +436,7 @@ export async function runSkillsafeModel(file, modelId, device = 'webgpu', onProg
       maskBlob,
       width: origW,
       height: origH,
-      deviceUsed: effectiveDevice
+      deviceUsed: currentDevice
     };
   } finally {
     URL.revokeObjectURL(objectUrl);

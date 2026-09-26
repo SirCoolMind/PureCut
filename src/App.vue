@@ -149,7 +149,9 @@ const {
   handleModelSelectChange,
   confirmModelRerun,
   cancelModelRerun,
-  reRunModel
+  reRunModel,
+  ttaFlipFusion,
+  toggleTtaFlipFusion
 } = useProcessing({
   currentFileBlob,
   originalUrl,
@@ -518,10 +520,12 @@ onUnmounted(() => {
           :selected-model="selectedModel"
           :selected-device="selectedDevice"
           :telemetry="telemetry"
+          :tta-flip-fusion="ttaFlipFusion"
           @apply-preset="applyPreset"
           @recomposite="recompositeCanvas"
           @model-change="handleModelSelectChange"
           @device-change="selectedDevice = $event; reRunModel()"
+          @tta-toggle="toggleTtaFlipFusion"
         />
       </section>
     </main>

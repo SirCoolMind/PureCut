@@ -21,7 +21,9 @@ export const STORAGE_KEYS = {
   /** UI font scale. One of {@link FONT_SIZES}. Mirrored in index.html. */
   fontSize: 'purecut_font_size',
   /** Whether to confirm before re-running the model on a model switch: 'true' | 'false'. */
-  promptModelChange: 'purecut_prompt_model_change'
+  promptModelChange: 'purecut_prompt_model_change',
+  /** Whether two-pass TTA Flip Fusion is active: 'true' | 'false'. */
+  ttaFlipFusion: 'purecut_tta_flip_fusion'
 } as const
 
 /**

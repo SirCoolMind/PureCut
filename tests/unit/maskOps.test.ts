@@ -5,6 +5,7 @@ import {
   snapToNearestEdge,
   subjectEraseRect,
   wandEraserRects,
+  fuseTtaMask,
   type TrimThresholdOptions
 } from '../../src/core/maskOps.js'
 
@@ -308,5 +309,57 @@ describe('snapToNearestEdge', () => {
 
     expect(offset.x - atOrigin.x).toBe(1000)
     expect(offset.y - atOrigin.y).toBe(500)
+  })
+})
+
+describe('fuseTtaMask', () => {
+  it('unflips and takes the pixel-wise max for 1-channel mask', () => {
+    // Width 4, Height 2.
+    // Row 0:
+    // Original: [100, 20, 0, 50]
+    // Flop (flipped input): [200, 0, 10, 80]
+    // Flop unflopped horizontally: [80, 10, 0, 200]
+    // Expected Max: [max(100, 80), max(20, 10), max(0, 0), max(50, 200)] = [100, 20, 0, 200]
+    const maskData = new Uint8Array([
+      100, 20, 0, 50,
+      10, 30, 255, 0
+    ])
+    // Row 1 flop: [0, 240, 40, 15] -> unflopped: [15, 40, 240, 0]
+    // Row 1 max: [max(10, 15), max(30, 40), max(255, 240), max(0, 0)] = [15, 40, 255, 0]
+    const flopData = new Uint8Array([
+      200, 0, 10, 80,
+      0, 240, 40, 15
+    ])
+
+    fuseTtaMask(maskData, flopData, 4, 2, 1)
+
+    expect(Array.from(maskData)).toEqual([
+      100, 20, 0, 200,
+      15, 40, 255, 0
+    ])
+  })
+
+  it('correctly handles multi-channel buffers (e.g. RGBA mask where alpha is channel 4)', () => {
+    // Width 2, Height 1, 4 channels
+    // Pixel 0: [255, 255, 255, 50]
+    // Pixel 1: [255, 255, 255, 200]
+    // Flop Pixel 0 (was Pixel 1 in orig): [255, 255, 255, 220]
+    // Flop Pixel 1 (was Pixel 0 in orig): [255, 255, 255, 100]
+    // Unflopped flop:
+    // Pixel 0 = [255, 255, 255, 100]
+    // Pixel 1 = [255, 255, 255, 220]
+    const maskData = new Uint8ClampedArray([
+      255, 255, 255, 50,
+      255, 255, 255, 200
+    ])
+    const flopData = new Uint8ClampedArray([
+      255, 255, 255, 220,
+      255, 255, 255, 100
+    ])
+
+    fuseTtaMask(maskData, flopData, 2, 1, 4)
+
+    expect(maskData[3]).toBe(100) // max(50, 100)
+    expect(maskData[7]).toBe(220) // max(200, 220)
   })
 })

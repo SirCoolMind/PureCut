@@ -36,10 +36,12 @@ defineProps({
   /** 'gpu' | 'cpu' */
   selectedDevice: { type: String, required: true },
   /** Hardware telemetry rendered in the card at the bottom. */
-  telemetry: { type: Object, required: true }
+  telemetry: { type: Object, required: true },
+  /** Two-pass TTA Flip Fusion setting */
+  ttaFlipFusion: { type: Boolean, default: true }
 })
 
-defineEmits(['apply-preset', 'recomposite', 'model-change', 'device-change'])
+defineEmits(['apply-preset', 'recomposite', 'model-change', 'device-change', 'tta-toggle'])
 </script>
 
 <template>
@@ -147,6 +149,17 @@ defineEmits(['apply-preset', 'recomposite', 'model-change', 'device-change'])
           @click="tuning.deFringe = !tuning.deFringe; $emit('recomposite')"
         >
           {{ tuning.deFringe ? 'Active' : 'Off' }}
+        </button>
+      </div>
+
+      <!-- Toggle: TTA Flip Fusion -->
+      <div class="tune-group row-group">
+        <span title="Test-Time Augmentation: two-pass flip fusion to refine tricky fingers and edges">TTA Flip Fusion:</span>
+        <button
+          :class="['toggle-pill', { active: ttaFlipFusion }]"
+          @click="$emit('tta-toggle')"
+        >
+          {{ ttaFlipFusion ? 'Active' : 'Off' }}
         </button>
       </div>
 

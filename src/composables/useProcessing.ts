@@ -117,6 +117,17 @@ export function useProcessing({
   const pendingModelId = ref<string | null>(null)
   const dontAskModelChangeAgain = ref(false)
 
+  // TTA Flip Fusion: enabled by default, changeable in Power User mode
+  const ttaFlipFusion = ref(localStorage.getItem(STORAGE_KEYS.ttaFlipFusion) !== 'false')
+
+  function toggleTtaFlipFusion() {
+    ttaFlipFusion.value = !ttaFlipFusion.value
+    localStorage.setItem(STORAGE_KEYS.ttaFlipFusion, String(ttaFlipFusion.value))
+    if (currentFileBlob.value) {
+      reRunModel()
+    }
+  }
+
   // Preload handler
   async function handlePreload() {
     if (isPreloading.value || isProcessing.value) return
@@ -194,13 +205,21 @@ export function useProcessing({
       let rawMaskBlob: Blob | null = null
 
       // Run transformers.js model
-      const result = await runTransformersModel(file, selectedModel.value, currentModelMeta.value.dtype, currentModelMeta.value.disableOptimization, selectedDevice.value, (p) => {
-        if (p.message) statusMessage.value = p.message
-        if (p && (p.progress !== undefined || p.pct !== undefined)) {
-          const raw = p.pct !== undefined ? p.pct : p.progress
-          downloadProgress.percent = Math.min(100, Math.max(0, Math.round(raw > 1 ? raw : raw * 100)))
-        }
-      })
+      const result = await runTransformersModel(
+        file,
+        selectedModel.value,
+        currentModelMeta.value.dtype,
+        currentModelMeta.value.disableOptimization,
+        selectedDevice.value,
+        (p) => {
+          if (p.message) statusMessage.value = p.message
+          if (p && (p.progress !== undefined || p.pct !== undefined)) {
+            const raw = p.pct !== undefined ? p.pct : p.progress
+            downloadProgress.percent = Math.min(100, Math.max(0, Math.round(raw > 1 ? raw : raw * 100)))
+          }
+        },
+        { tta: ttaFlipFusion.value }
+      )
       rawMaskBlob = result.maskBlob
 
       cachedModels[selectedModel.value] = true
@@ -331,6 +350,8 @@ export function useProcessing({
     handleModelSelectChange,
     confirmModelRerun,
     cancelModelRerun,
-    reRunModel
+    reRunModel,
+    ttaFlipFusion,
+    toggleTtaFlipFusion
   }
 }
