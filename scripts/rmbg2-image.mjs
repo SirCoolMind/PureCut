@@ -35,7 +35,7 @@ export async function importSharp() {
  * Input discovery
  * ------------------------------------------------------------------ */
 
-const IMAGE_EXT = /\.(png|jpe?g|webp|avif|tiff?|gif|bmp)$/i
+const IMAGE_EXT = /\.(png|jpe?g|webp|avif|tiff?|bmp)$/i
 
 export async function listInputs(filters) {
   let names = []
@@ -326,6 +326,14 @@ export async function composeCutout(sharp, sourceBuffer, maskBytes, maskW, maskH
     raw: { width: info.width, height: info.height, channels }
   })
     .png({ compressionLevel: 9 })
+    .toBuffer()
+}
+
+/** Downscaled transparent preview for cutout with alpha preserved. */
+export async function previewCutout(sharp, cutoutPng, maxDim = 1200) {
+  return sharp(cutoutPng)
+    .resize(maxDim, maxDim, { fit: 'inside', withoutEnlargement: true })
+    .png({ compressionLevel: 6 })
     .toBuffer()
 }
 

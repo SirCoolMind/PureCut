@@ -20,6 +20,28 @@ export async function serve(session, sharp) {
 
   let queue = Promise.resolve()
   let buffered = ''
+  let accumulatedReportResults = []
+
+  let lastCpu = process.cpuUsage()
+  let lastCpuTime = Date.now()
+  const statsTimer = setInterval(() => {
+    const now = Date.now()
+    const dtMicros = (now - lastCpuTime) * 1000
+    const cpuDiff = process.cpuUsage(lastCpu)
+    lastCpu = process.cpuUsage()
+    lastCpuTime = now
+    const cpuPercent = dtMicros > 0 ? Math.round(((cpuDiff.user + cpuDiff.system) / dtMicros) * 100) : 0
+    const mem = process.memoryUsage()
+
+    send({
+      type: 'stats',
+      rss: mem.rss,
+      cpuPercent,
+      model: session.file,
+      warm: Boolean(session.session)
+    })
+  }, 1000)
+  statsTimer.unref()
 
   process.stdin.setEncoding('utf8')
   process.stdin.on('data', (chunk) => {
@@ -116,13 +138,20 @@ export async function serve(session, sharp) {
       return
     }
 
+    if (request.clearReport || !request.appendReport) {
+      accumulatedReportResults = []
+    }
+
     const { results, reportPath } = await runBatch({
       session,
       sharp,
       inputs,
       onLog: session.onLog,
-      tta: Boolean(request.tta)
+      tta: Boolean(request.tta),
+      existingResults: accumulatedReportResults
     })
+
+    accumulatedReportResults.push(...results)
 
     // `Run All Model` asks for this: every image for this checkpoint is done, so the
     // model can be closed before the next one loads. Releasing here (rather than at

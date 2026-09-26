@@ -28,6 +28,7 @@
 
 import { spawn } from 'node:child_process'
 import { mkdir, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -41,10 +42,10 @@ import {
   PROVIDERS,
   DEFAULT_PROVIDER
 } from './rmbg2.config.mjs'
-import { weightsStatus } from './rmbg2-session.mjs'
+import { weightsStatus, cachePaths } from './rmbg2-session.mjs'
 
 const RUNNER = fileURLToPath(new URL('./rmbg2.mjs', import.meta.url))
-const IMAGE_EXT = /\.(png|jpe?g|webp|avif|tiff?|gif|bmp)$/i
+const IMAGE_EXT = /\.(png|jpe?g|webp|avif|tiff?|bmp)$/i
 
 /** Uploads are bounded: a multi-MB photo is fine, a 4 GB file is a mistake. */
 const MAX_UPLOAD_BYTES = 40 * 1024 * 1024
@@ -60,7 +61,6 @@ const MIME = {
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
   '.avif': 'image/avif',
-  '.gif': 'image/gif',
   '.bmp': 'image/bmp',
   '.tif': 'image/tiff',
   '.tiff': 'image/tiff'
@@ -87,6 +87,7 @@ class Runner {
     this.pending = []
     this.buffer = ''
     this.listeners = new Set()
+    this.lastStats = null
   }
 
   start() {
@@ -109,6 +110,7 @@ class Runner {
       this.emit({ type: 'log', text: `runner exited (code ${code})` })
       this.child = null
       this.pending = []
+      this.lastStats = null
     })
   }
 
@@ -128,6 +130,10 @@ class Runner {
   }
 
   emit(message) {
+    if (message.type === 'stats') {
+      this.lastStats = { ...message, at: Date.now() }
+      return
+    }
     // `ready` announces a freshly started child; anything still waiting on one
     // can now send its request.
     if (message.type === 'ready') {
@@ -160,6 +166,7 @@ class Runner {
   dispose() {
     this.child?.kill()
     this.child = null
+    this.lastStats = null
   }
 }
 
@@ -212,6 +219,8 @@ export function rmbg2Lab() {
           }
           if (route === '/list') return await handleList(response)
           if (route === '/providers') return await handleProviders(response)
+          if (route === '/system') return handleSystem(runner, response)
+          if (route === '/clear-cache') return await handleClearCache(runner, response, url)
           if (route === '/upload') return await handleUpload(request, response, url)
           if (route === '/delete') return await handleDelete(response, url)
           if (route === '/clear') return await handleClear(response)
@@ -283,6 +292,70 @@ async function handleProviders(response) {
     })),
     default: DEFAULT_PROVIDER
   })
+}
+
+let prevServerCpu = process.cpuUsage()
+let prevServerTime = Date.now()
+
+function getDevServerMetrics() {
+  const now = Date.now()
+  const dtMicros = (now - prevServerTime) * 1000
+  const cpuDiff = process.cpuUsage(prevServerCpu)
+  prevServerCpu = process.cpuUsage()
+  prevServerTime = now
+  const cpuPercent = dtMicros > 0 ? Math.round(((cpuDiff.user + cpuDiff.system) / dtMicros) * 100) : 0
+  const rss = process.memoryUsage().rss
+  return { cpuPercent, rss }
+}
+
+function handleSystem(runner, response) {
+  const numCores = os.cpus().length || 1
+  const server = getDevServerMetrics()
+  const engineStats = runner?.lastStats && (Date.now() - runner.lastStats.at < 3500)
+    ? runner.lastStats
+    : null
+
+  const engineRss = engineStats ? engineStats.rss : 0
+  const serverCpu = server.cpuPercent
+  const engineCpu = engineStats ? engineStats.cpuPercent : 0
+  const totalProcessCpu = Math.min(100, Math.round((serverCpu + engineCpu) / numCores))
+  const totalRss = server.rss + engineRss
+
+  return json(response, 200, {
+    cpu: {
+      loadPercent: totalProcessCpu,
+      serverCpuPercent: Math.min(100, Math.round(serverCpu / numCores)),
+      engineCpuPercent: Math.min(100, Math.round(engineCpu / numCores))
+    },
+    ram: {
+      totalMb: Math.round(totalRss / 1048576),
+      serverMb: Math.round(server.rss / 1048576),
+      engineMb: Math.round(engineRss / 1048576),
+      engineWarm: Boolean(engineStats?.warm),
+      activeModel: engineStats?.model || null
+    }
+  })
+}
+
+async function handleClearCache(runner, response, url) {
+  const file = url.searchParams.get('file') || url.searchParams.get('checkpoint') || ''
+  const cp = CHECKPOINTS.find((c) => c.file === file)
+  if (!cp) return json(response, 404, { error: 'Unknown checkpoint' })
+
+  // Kill running runner process so it unloads session from RAM
+  runner?.dispose()
+
+  const { weights, meta } = cachePaths(cp.model, cp.file)
+  let deleted = false
+  try {
+    await unlink(weights)
+    deleted = true
+  } catch { /* absent */ }
+  try {
+    await unlink(meta)
+  } catch { /* absent */ }
+
+  return json(response, 200, { cleared: true, file, deleted })
 }
 
 /**
@@ -541,13 +614,16 @@ async function handleRun(runner, response, url) {
     return
   }
 
+  const clearReport = url.searchParams.get('clearReport') === '1'
+  const appendReport = url.searchParams.get('appendReport') === '1'
+
   rememberRun(runId, { status: 'running' })
 
   // Warm-up is announced so a first-time run says "starting the runner" rather
   // than nothing at all.
   send({ type: 'log', text: 'runner: starting (first run also downloads the checkpoint)' })
   await runner.whenReady()
-  runner.send({ action: 'run', inputs, checkpoint, provider, release, tta })
+  runner.send({ action: 'run', inputs, checkpoint, provider, release, tta, clearReport, appendReport })
 
   // The batch is one request/one result, so close the stream when it lands.
   const finish = (message) => {

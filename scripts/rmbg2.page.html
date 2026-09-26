@@ -5,15 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
 <title>PureCut · RMBG-2.0 local lab (dev only)</title>
-<link rel="stylesheet" href="/rmbg2/app.css">
+<link rel="stylesheet" href="/rmbg2/app.css?v=3">
 </head>
 <body>
 
 <!-- ======================= FIRST SCREEN ======================= -->
 <main class="stage">
   <div class="topbar">
-    <h1>PureCut &times; Bria RMBG-2.0</h1>
-    <span class="badge">dev only</span>
+    <h1>PureCut Lab (v1.0.0) (Local Dev Only)</h1>
     <span class="spacer"></span>
     <details>
       <summary>why is this a local page?</summary>
@@ -37,59 +36,143 @@
   </div>
 
   <div class="columns">
-    <!-- ---------- LEFT: images ---------- -->
-    <section class="panel">
-      <h2>Images <span class="count" id="fileCount"></span></h2>
+    <!-- ---------- LEFT: Images + Model & Hardware ---------- -->
+    <section class="panel panel-left">
+      <div class="panel-section">
+        <div class="images-head">
+          <h2>Images <span class="count" id="fileCount"></span></h2>
+          <button id="clearImages" class="btn-clear" type="button" title="Clear all uploaded images">Clear All</button>
+        </div>
 
-      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Upload images">
-        <strong>Drop images here, or click to choose</strong>
-        <span>PNG, JPG, WebP, AVIF, TIFF, BMP &middot; up to 40 MB &middot; or paste with Ctrl+V</span>
+        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Upload images">
+          <strong>Drop images here, or click to choose</strong>
+          <span>PNG, JPG, WebP, AVIF, TIFF, BMP &middot; paste Ctrl+V</span>
+        </div>
+        <input type="file" id="picker" accept=".png,.jpg,.jpeg,.webp,.avif,.tif,.tiff,.bmp,image/png,image/jpeg,image/webp,image/avif,image/tiff,image/bmp" multiple hidden>
+
+        <div class="files" id="files"></div>
       </div>
-      <input type="file" id="picker" accept="image/*" multiple hidden>
 
-      <div class="files" id="files"></div>
+      <div class="panel-section model-controls">
+        <h2>Model &amp; Execution</h2>
+
+        <div class="field">
+          <label for="checkpoint">Checkpoint</label>
+          <select id="checkpoint"></select>
+        </div>
+
+        <div class="field-check">
+          <label for="tta">
+            <input type="checkbox" id="tta" checked>
+            <span>Apply TTA Flip Fusion <small>(Refine tricky fingers and edges)</small></span>
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="run" class="run" disabled>Run</button>
+          <button id="runAll" class="run-all" disabled
+                  title="Run the selected images through every checkpoint, one after another, to compare them">
+            Run All Model
+          </button>
+          <button id="report" class="report-btn" disabled title="Enabled once a run has finished">Open full-size report</button>
+        </div>
+
+        <div class="hw-panel" id="hwPanel">
+          <div class="hw-panel-header">
+            <span class="hw-panel-title">Process Resources</span>
+            <span class="engine-badge" id="engineStatusBadge">Engine: Idle</span>
+          </div>
+          <div class="res-monitor">
+            <div class="res-row">
+              <div class="res-meta"><span>Process CPU</span><strong id="resCpuPct">0%</strong></div>
+              <div class="res-bar"><div class="res-fill res-cpu" id="resCpuFill" style="width: 0%"></div></div>
+            </div>
+            <div class="res-row">
+              <div class="res-meta"><span>Process RAM</span><strong id="resRamVal">0 MB</strong></div>
+              <div class="res-bar"><div class="res-fill res-ram" id="resRamFill" style="width: 0%"></div></div>
+            </div>
+          </div>
+          <div class="res-breakdown" id="resBreakdown">
+            <span>Server: <strong id="resServerMb">0</strong> MB</span>
+            <span class="res-sep">&bull;</span>
+            <span>Engine: <strong id="resEngineMb">0</strong> MB</span>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <!-- ---------- RIGHT: model, hardware, actions, log ---------- -->
-    <section class="panel">
-      <h2>Model &amp; hardware</h2>
-
-      <div class="field">
-        <label for="checkpoint">Checkpoint</label>
-        <select id="checkpoint"></select>
+    <!-- ---------- RIGHT: Statistics & Live Activity Log ---------- -->
+    <section class="panel panel-right">
+      <div class="panel-section">
+        <div class="section-head">
+          <h2>Model Status &amp; Statistics</h2>
+          <div class="section-head-actions">
+            <button id="preloadAll" class="btn-head-preload" type="button" title="Download every checkpoint">↓ Preload All</button>
+            <span class="overall-progress" id="overallProgress"></span>
+          </div>
+        </div>
+        <div class="models-overview" id="modelsOverview"></div>
       </div>
 
-      <!-- Replaces the execution-provider picker. DirectML is the only GPU provider
-           this runtime bundles, and measurement showed it slower AND returning an
-           empty mask, so it is not offered here. CPU is used for every run; the
-           provider plumbing still exists for the CLI and `rmbg2:bench`. -->
-      <div class="modelinfo" id="modelInfo"></div>
-
-      <div class="preload-row">
-        <button id="preload" title="Download only the checkpoint selected above">↓ Preload</button>
-        <button id="preloadAll" title="Download every checkpoint">↓ Preload All Model</button>
+      <div class="panel-section log-section">
+        <div class="log-head">
+          <h2>Activity Log</h2>
+          <button id="clearLog" class="btn-clear" type="button" title="Clear log content">Clear</button>
+        </div>
+        <pre id="log"><span class="dim">Ready. Add images on the left, select a checkpoint, and click Run.</span></pre>
       </div>
-
-      <div class="field-check">
-        <label for="tta">
-          <input type="checkbox" id="tta" checked>
-          <span>Apply TTA Flip Fusion <small>(Refine tricky fingers and edges)</small></span>
-        </label>
-      </div>
-
-      <div class="actions">
-        <button id="run" class="run" disabled>Run</button>
-        <button id="runAll" class="run-all" disabled
-                title="Run the selected images through every checkpoint, one after another, to compare them">
-          Run All Model
-        </button>
-        <button id="report" class="report-btn" disabled title="Enabled once a run has finished">Open full-size report</button>
-      </div>
-
-      <pre id="log"><span class="dim">Idle. Add images on the left, then press Run.</span></pre>
     </section>
   </div>
 </main>
+
+<!-- ======================= CONFIRMATION MODAL ======================= -->
+<dialog id="confirmModal" class="confirm-dialog">
+  <form method="dialog" class="dialog-box">
+    <h3>Run All Models?</h3>
+    <p>
+      Running every checkpoint sequentially is <strong>computationally intensive</strong> and will take longer because each model must be loaded into memory and run on your CPU.
+    </p>
+    <div class="dialog-stats" id="confirmStats"></div>
+    <div class="dialog-actions">
+      <button id="cancelRunAll" type="button" class="btn-secondary">Cancel</button>
+      <button id="confirmRunAll" type="button" class="btn-primary">Yes, Run All</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ======================= IMAGE DETAIL LIGHTBOX MODAL ======================= -->
+<dialog id="detailModal" class="detail-dialog">
+  <div class="detail-box">
+    <div class="detail-toolbar">
+      <div class="detail-title-group">
+        <h3 id="detailTitle">Image Preview</h3>
+        <span class="detail-caption" id="detailCaption"></span>
+      </div>
+      <div class="detail-actions">
+        <div class="bg-switcher" id="backdropGroup">
+          <span class="bg-label">Backdrop:</span>
+          <button type="button" class="bg-btn active" data-bg="grid" title="Checkered Grid">Grid</button>
+          <button type="button" class="bg-btn" data-bg="white" title="White">White</button>
+          <button type="button" class="bg-btn" data-bg="dark" title="Dark">Dark</button>
+          <button type="button" class="bg-btn" data-bg="color" title="Custom Color">Color</button>
+          <input type="color" id="bgColorPicker" value="#2563eb" title="Pick color" class="bg-picker" hidden>
+        </div>
+        <div class="zoom-group">
+          <button type="button" id="zoomOut" class="btn-zoom" title="Zoom Out">-</button>
+          <span id="zoomLevel" class="zoom-val">100%</span>
+          <button type="button" id="zoomIn" class="btn-zoom" title="Zoom In">+</button>
+          <button type="button" id="zoomReset" class="btn-zoom btn-zoom-reset" title="Reset Zoom">Fit</button>
+        </div>
+        <button type="button" id="closeDetail" class="btn-close-detail" title="Close (Esc)">&times;</button>
+      </div>
+    </div>
+    <div class="detail-stage" id="detailStage">
+      <div class="detail-canvas" id="detailCanvas">
+        <img id="detailImg" alt="Detail preview" draggable="false">
+      </div>
+    </div>
+  </div>
+</dialog>
 
 <!-- ======================= BELOW THE FOLD ======================= -->
 <section class="below">
@@ -100,6 +183,6 @@
   <div id="results"></div>
 </section>
 
-<script type="module" src="/rmbg2/app.js"></script>
+<script type="module" src="/rmbg2/app.js?v=3"></script>
 </body>
 </html>

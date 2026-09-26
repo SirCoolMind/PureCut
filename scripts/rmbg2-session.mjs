@@ -23,6 +23,7 @@ import {
   composeCutout,
   extractMask,
   maskToPng,
+  previewCutout,
   previewJpeg,
   previewMask,
   previewOverChecker,
@@ -268,6 +269,10 @@ export class Rmbg2Session {
   }
 
   async load() {
+    const cached = await this.cachedBytes()
+    if (!cached && this.session) {
+      this.release()
+    }
     if (this.session) return this.session
 
     const ort = await importOrt()
@@ -390,7 +395,15 @@ export class Rmbg2Session {
  * Batch -> files + report
  * ------------------------------------------------------------------ */
 
-export async function runBatch({ session, sharp, inputs, onLog, writeReport = true, tta = false }) {
+export async function runBatch({
+  session,
+  sharp,
+  inputs,
+  onLog,
+  writeReport = true,
+  tta = false,
+  existingResults = []
+}) {
   await mkdir(OUTPUT_DIR, { recursive: true })
   const results = []
 
@@ -409,10 +422,17 @@ export async function runBatch({ session, sharp, inputs, onLog, writeReport = tr
         mask.height
       )
 
-      const cutoutPath = path.join(OUTPUT_DIR, `${base}-cutout.png`)
-      const maskPath = path.join(OUTPUT_DIR, `${base}-mask.png`)
+      const cpTag = (session.file || 'model').replace(/\.onnx$/i, '').replace(/[^a-zA-Z0-9_-]/g, '_')
+      const cutoutTagged = `${base}-${cpTag}-cutout.png`
+      const maskTagged = `${base}-${cpTag}-mask.png`
+      const cutoutPath = path.join(OUTPUT_DIR, cutoutTagged)
+      const maskPath = path.join(OUTPUT_DIR, maskTagged)
       await writeFile(cutoutPath, cutoutPng)
       await writeFile(maskPath, maskPng)
+
+      // Also write un-tagged version for default/single-run direct links
+      await writeFile(path.join(OUTPUT_DIR, `${base}-cutout.png`), cutoutPng)
+      await writeFile(path.join(OUTPUT_DIR, `${base}-mask.png`), maskPng)
 
       results.push({
         name: path.basename(sourcePath),
@@ -428,10 +448,10 @@ export async function runBatch({ session, sharp, inputs, onLog, writeReport = tr
         timings: { ...timings, provider: session.provider },
         tta: Boolean(tta),
         mask: mask.stats,
-        files: { cutout: `${base}-cutout.png`, mask: `${base}-mask.png` },
+        files: { cutout: cutoutTagged, mask: maskTagged },
         previews: {
           original: (await previewJpeg(sharp, pre.buffer)).toString('base64'),
-          cutout: (await previewOverChecker(sharp, cutoutPng)).toString('base64'),
+          cutout: (await previewCutout(sharp, cutoutPng)).toString('base64'),
           mask: (await previewMask(sharp, mask.bytes, mask.width, mask.height)).toString('base64')
         }
       })
@@ -451,7 +471,8 @@ export async function runBatch({ session, sharp, inputs, onLog, writeReport = tr
   let reportPath = null
   if (writeReport) {
     reportPath = path.join(OUTPUT_DIR, 'report.html')
-    await writeFile(reportPath, buildReport({ session, results }), 'utf8')
+    const reportData = existingResults && existingResults.length ? [...existingResults, ...results] : results
+    await writeFile(reportPath, buildReport({ session, results: reportData }), 'utf8')
     onLog(`report: ${path.relative(ROOT, reportPath).replace(/\\/g, '/')}`)
   }
 
