@@ -12,7 +12,7 @@
  * The host keeps the `v-if` that chooses the tab, and `.tab-content` sits on the
  * root here, so the fade-in animation still runs on every tab switch.
  */
-import { appVersion } from '../constants.js'
+import { appVersion, appBuildHash } from '../constants.js'
 </script>
 
 <template>
@@ -23,18 +23,21 @@ import { appVersion } from '../constants.js'
       </div>
       <div>
         <h2>PureCut</h2>
-        <p class="about-ver">Version {{ appVersion }}</p>
+        <p class="about-ver">
+          Version {{ appVersion }}
+          <span v-if="appBuildHash && appBuildHash !== 'dev'" class="about-hash">• {{ appBuildHash.slice(0, 7) }}</span>
+        </p>
       </div>
     </div>
     <p class="about-desc">
       Private, client-side AI background removal studio. Images never leave your device — 
-      zero data is sent to any server. Powered by BRIA RMBG-1.4 neural engine running 
-      entirely in your browser via WebGPU & WebAssembly.
+      zero data is sent to any server. Powered by curated ONNX models running entirely in
+      your browser via WebGPU and WebAssembly.
     </p>
     <div class="about-stats">
       <div class="about-stat">
         <span class="about-stat-label">Engine</span>
-        <span class="about-stat-value">BRIA RMBG-1.4 + ISNet</span>
+        <span class="about-stat-value">RMBG-1.4 + ISNet + MODNet</span>
       </div>
       <div class="about-stat">
         <span class="about-stat-label">Framework</span>
@@ -50,7 +53,7 @@ import { appVersion } from '../constants.js'
       </div>
     </div>
     <p class="about-footer">
-      Built with ❤️ — All processing happens locally in your browser.
+      Built with ❤️ by <a href="https://github.com/SirCoolMind" target="_blank" rel="noopener noreferrer">SirCoolMind</a> — All processing happens locally in your browser.
     </p>
   </div>
 </template>
@@ -156,6 +159,15 @@ import { appVersion } from '../constants.js'
   margin: 0;
   padding-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.about-footer a {
+  color: #818cf8;
+  text-decoration: none;
+}
+
+.about-footer a:hover {
+  text-decoration: underline;
 }
 
 </style>

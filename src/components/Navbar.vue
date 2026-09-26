@@ -17,8 +17,21 @@
  */
 import { Sparkles, RotateCcw, Wrench, Monitor, Settings } from 'lucide-vue-next'
 import { appVersion } from '../constants.js'
+import { useVersionCheck } from '../composables/useVersionCheck.js'
 import FontSizeButton from './FontSizeButton.vue'
 import ModelStatusBar from './ModelStatusBar.vue'
+import UpdatePrompt from './UpdatePrompt.vue'
+
+const {
+  currentHash,
+  hasNewVersion,
+  newVersionHash,
+  newVersionNumber,
+  showPrompt,
+  applyUpdate,
+  dismissPrompt,
+  openPrompt
+} = useVersionCheck()
 
 defineProps({
   /** True while the AI pipeline runs; disables the model picker and preload. */
@@ -70,8 +83,13 @@ defineEmits([
       </div>
       <div class="brand-title">
         <span class="brand-name">Pure<span>Cut</span></span>
-        <button class="version-badge" @click="$emit('open-info')" title="Version, Changelog & Roadmap">
+        <button
+          :class="['version-badge', { 'update-ready': hasNewVersion }]"
+          @click="hasNewVersion ? openPrompt() : $emit('open-info')"
+          :title="hasNewVersion ? `Update available: v${newVersionNumber} (${newVersionHash.slice(0, 7)}) - Click to update` : 'Version, Changelog & Roadmap'"
+        >
           v{{ appVersion }}
+          <span v-if="hasNewVersion" class="version-update-dot" title="New update available"></span>
         </button>
         <button 
           class="btn-benchmark-nav" 
@@ -137,6 +155,16 @@ defineEmits([
         </button>
       </div>
     </div>
+
+    <!-- Floating Update Available Banner Teleported to Body -->
+    <UpdatePrompt
+      :show="showPrompt"
+      :current-hash="currentHash"
+      :new-hash="newVersionHash"
+      :new-version="newVersionNumber"
+      @apply="applyUpdate"
+      @close="dismissPrompt"
+    />
   </header>
 </template>
 
@@ -335,4 +363,35 @@ defineEmits([
   color: #c7d2fe;
   border-color: rgba(99, 102, 241, 0.5);
 }
+
+/* Update Ready State in Navbar */
+.version-badge.update-ready {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.5);
+  color: #38bdf8;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.version-badge.update-ready:hover {
+  background: rgba(56, 189, 248, 0.35);
+  border-color: rgba(56, 189, 248, 0.7);
+}
+
+.version-update-dot {
+  width: 5px;
+  height: 5px;
+  background: #38bdf8;
+  border-radius: 50%;
+  animation: updateDotPulse 1.6s infinite;
+}
+
+@keyframes updateDotPulse {
+  0% { transform: scale(0.9); opacity: 0.8; box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.8); }
+  70% { transform: scale(1.15); opacity: 1; box-shadow: 0 0 0 5px rgba(56, 189, 248, 0); }
+  100% { transform: scale(0.9); opacity: 0.8; box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+}
 </style>
+

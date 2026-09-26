@@ -44,20 +44,6 @@ export const SKILLSAFE_MODELS = {
     mean: [0.485, 0.456, 0.406],
     std: [0.229, 0.224, 0.225],
     preferredDevice: 'wasm' // ceil_mode MaxPool unsupported in ONNX WebGPU JSEP
-  },
-  'skillsafe-ai/isnet-general-use': {
-    name: 'IS-Net General',
-    filename: 'isnet-general-use.onnx',
-    url: 'https://huggingface.co/skillsafe-ai/isnet-general-use/resolve/main/isnet-general-use.onnx',
-    sizeBytes: 178648008,
-    sizeDisplay: '179 MB',
-    inputWidth: 1024,
-    inputHeight: 1024,
-    inputName: 'input_image',
-    outputName: 'output_image',
-    mean: [0.5, 0.5, 0.5],
-    std: [1.0, 1.0, 1.0],
-    preferredDevice: 'wasm' // ceil_mode MaxPool is not supported by ONNX Runtime WebGPU JSEP
   }
 };
 

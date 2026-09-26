@@ -16,8 +16,8 @@ export async function checkLanding(h) {
   await checkVisible('.navbar', 'navbar rendered')
   await checkVisible('.brand-name', 'brand name rendered')
   check(
-  'model picker has all 3 models',
-  (await page.locator('.model-picker-select option').count()) === 3,
+  'model picker has all 4 active models',
+  (await page.locator('.model-picker-select option').count()) === 4,
   `found ${await page.locator('.model-picker-select option').count()}`
   )
   await checkVisible('.hero-section', 'hero/dropzone view rendered')

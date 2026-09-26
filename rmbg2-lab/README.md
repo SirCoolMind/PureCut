@@ -118,13 +118,22 @@ It is dev-only on three axes: registered with `apply: 'serve'`, absent from `dis
 request is rejected unless it came from loopback. Uploads are size-capped, the filename is
 sanitised to a basename, and only image extensions are accepted.
 
-## Choosing a checkpoint
+## Choosing a checkpoint and protecting RAM
 
-| Checkpoint | Size | Notes |
-| --- | --- | --- |
-| `onnx/model_q4f16.onnx` | 223 MB | Default. 4-bit quantised; the sensible choice. |
-| `onnx/model_fp16.onnx` | 490 MB | Half precision. Bigger download, marginally cleaner edges. |
-| `onnx/model.onnx` | 977 MB | The uncompressed export. Use to sanity-check a quantisation. |
+All checkpoints run the identical RMBG-2.0 graph at 1024×1024. Checkpoint download size is not
+the model's runtime footprint: ONNX session and activation buffers require several GB of native
+RAM. The lab checks available physical RAM before it loads a session and refuses an unsafe run.
+
+| Checkpoint | Download | Estimated peak RAM | Minimum free RAM | Notes |
+| --- | ---: | ---: | ---: | --- |
+| `onnx/model_q4f16.onnx` | 223 MB | ~9 GB | 12 GB | Default. 4-bit quantised; the sensible choice. |
+| `onnx/model_fp16.onnx` | 490 MB | ~14 GB | 20 GB | Half precision. Bigger download, marginally cleaner edges. |
+| `onnx/model.onnx` | 977 MB | ~16 GB | 24 GB | Uncompressed fp32 reference; slowest and largest. |
+
+These are deliberately conservative admission thresholds, not memory guarantees. RMBG-2.0 is
+not suitable for 4 GB or 8 GB machines; on a 16 GB machine, use q4f16 only after closing
+memory-heavy applications. The GUI releases each native session after a run, and **Run All Model**
+releases one checkpoint before loading the next, so multi-GB allocations do not remain idle.
 
 Switching checkpoint reloads the session (minutes), so the page says so rather than appearing
 to hang.

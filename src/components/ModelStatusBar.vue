@@ -19,7 +19,7 @@
  * AI-context refactor; no behaviour was changed.
  */
 import { RefreshCw, HardDrive, Trash2 } from 'lucide-vue-next'
-import { modelOptions } from '../constants.js'
+import { activeModelOptions } from '../constants.js'
 
 defineProps({
   /** True while the AI pipeline runs; disables the picker, preload and clear. */
@@ -48,7 +48,7 @@ defineEmits(['model-change', 'preload', 'clear-cache'])
         :disabled="isProcessing || isPreloading"
         @change="$emit('model-change', $event)"
       >
-        <option v-for="model in modelOptions" :key="model.id" :value="model.id">
+        <option v-for="model in activeModelOptions" :key="model.id" :value="model.id">
           {{ model.name }} ({{ model.size }})
         </option>
       </select>

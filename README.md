@@ -7,10 +7,10 @@ PureCut is a private, client-side AI tool for removing image backgrounds directl
 ## 🌟 Key Features
 
 - **100% Private & In-Browser**: Images never leave the device. No data is sent to any server or API.
-- **State-of-the-Art BRIA RMBG-1.4 Neural Model (Default)**:
-  - Powered by Transformers.js (`briaai/RMBG-1.4`).
-  - Superior accuracy on difficult real-world photos: fine hair, clothing that camouflages with the background (e.g. grey sweatpants against metal walls), complex poses, and reflective surfaces.
-  - Also includes legacy ISNet models as selectable alternatives.
+- **Curated Model Catalogue**:
+  - BRIA RMBG-1.4 is the recommended default for difficult real-world photos: fine hair, clothing that camouflages with the background, complex poses, and reflections.
+  - Additional browser-safe models cover salient-object, portrait, and high-quality CPU-only cutouts.
+  - Models with unreliable output or unsuitable browser execution are documented below instead of being offered in the picker.
 - **Interactive Magic Brush (Erase & Restore Tool)**:
   - 🧹 **Erase Brush**: Allows users to manually swipe away stray reflections, panel seams, or handrails in seconds.
   - ✨ **Restore Brush**: Paint back any foreground detail that the AI might have accidentally clipped.
@@ -23,7 +23,7 @@ PureCut is a private, client-side AI tool for removing image backgrounds directl
   - **1-Click Clear Cache**: Purges all on-device cached AI weights from `CacheStorage` and `IndexedDB` with instant UI status refresh.
   - Pre-download button: allows users to download model weights ahead of time.
 - **In-App Version, Changelog & Roadmap Dialog**:
-  - Clickable `v1.1.0` badge in navbar opening a dedicated popup modal.
+  - Clickable version badge in navbar opening a dedicated popup modal.
   - Tabs for **Changelog**, **Roadmap**, **About**, and dedicated **Storage & Cache** inspector.
 - **Tinkering & Settings (Standard vs Power User)**:
   - **Standard Mode**: One-click quick presets (*Balanced*, *Fine Hair & Fur*, *Clean Product*, *Deep Background*).
@@ -52,6 +52,27 @@ Double-click **`start.bat`** in this directory.
 - It automatically runs `npm install` if `node_modules` is missing.
 - It launches the Vite development server and **opens your browser automatically** at `http://localhost:5173`.
 
+### Windows native RMBG-2.0 lab (not the web app)
+
+**RMBG-2.0 is too heavy and incompatible with browser processing.** Its published ONNX graph fails
+to create a browser session and its fixed 1024×1024 runtime has a multi-GB working set. It is
+therefore available only as a local Windows/Node lab, never in the deployed web application.
+
+Double-click **[`start-rmbg2.bat`](start-rmbg2.bat)** to install the Node-only dependencies when
+needed and open the local lab at `http://localhost:5173/rmbg2`. The launcher checks that a Hugging
+Face token is configured before starting; it gives exact setup instructions if one is missing.
+
+RMBG-2.0 is a gated Hugging Face repository. Before its first download:
+
+1. Accept the licence at <https://huggingface.co/briaai/RMBG-2.0>.
+2. Create a **READ** token at <https://huggingface.co/settings/tokens>.
+3. Create a `.env` file beside `start-rmbg2.bat` containing `HF_TOKEN=hf_your_token_here`.
+
+The `.env` file is gitignored. The launcher requires the token before it starts, even if weights
+are already cached; the token is sent only to `huggingface.co` when gated model weights need to
+be downloaded. See
+[`rmbg2-lab/README.md`](rmbg2-lab/README.md) for hardware limits and troubleshooting.
+
 ### Option 2: Command Line
 ```bash
 # 1. Install dependencies (first time only)
@@ -73,14 +94,71 @@ This project is pre-configured with GitHub Actions (`.github/workflows/deploy.ym
 
 ---
 
-## 🧠 How the AI Model Works
+## 🧠 Models and execution
 
-- **Engine**: Powered by [`@imgly/background-removal`](https://www.npmjs.com/package/@imgly/background-removal) which runs pre-trained ONNX neural network models in-browser using **WebAssembly (WASM)** and **WebGPU**.
-- **Model Weight Download**:
-  - On the very **first** image upload, the browser downloads the quantized model weights (~35–45 MB) from the CDN.
-  - The model weights are automatically stored in the browser's **IndexedDB cache**.
-  - Subsequent image removals load the model instantly from local cache without re-downloading.
-- **Computation**: Inference takes ~1 to 3 seconds on modern hardware and runs on the user's local CPU/GPU.
+PureCut runs entirely on the local device. The browser studio uses
+[`@huggingface/transformers`](https://huggingface.co/docs/transformers.js) and ONNX Runtime Web;
+the optional RMBG-2.0 lab uses native `onnxruntime-node` locally. Images are not uploaded to an
+application server.
+
+### Browser studio — active models
+
+These are the models shown in the studio model pickers. Weights download from Hugging Face on
+first use and are cached in browser storage for later use.
+
+| Model | Download | Execution | Intended use |
+| --- | ---: | --- | --- |
+| `briaai/RMBG-1.4` | 43 MB | WebGPU when available; WASM fallback | **Recommended default.** Difficult clothing, hair, reflections, and complex poses. |
+| `onnx-community/ISNet-ONNX` | 42 MB | WebGPU when available; WASM fallback | High-precision salient-object cutouts. |
+| `Xenova/modnet` | 20 MB | WebGPU when available; WASM fallback | Fast portrait matting. |
+| `onnx-community/BiRefNet_512x512-ONNX` | 473 MB | CPU WASM only | Highest-quality browser option; slow and a large download. |
+
+The browser selects WebGPU where the model graph supports it and falls back to multi-threaded
+WASM where needed. Actual timing depends on the device, image, browser memory budget, and whether
+the model is already cached.
+
+### Browser studio — retained but inactive models
+
+The following U²-Net entries remain in the internal catalogue for cache cleanup and future
+evaluation, but are **hidden from all model pickers**. They use `MaxPool` with `ceil_mode`, which
+ONNX Runtime WebGPU cannot execute; they must use CPU WASM. They are not currently part of the
+supported browser model set.
+
+| Model | Download | Status |
+| --- | ---: | --- |
+| `skillsafe-ai/u2netp` | 4.4 MB | Inactive; retained for future evaluation. |
+| `skillsafe-ai/u2net` | 176 MB | Inactive; retained for future evaluation. |
+| `skillsafe-ai/u2net-human-seg` | 176 MB | Inactive; retained for future evaluation. |
+
+### Tested but unsuitable browser models
+
+These models were evaluated and are deliberately not selectable.
+
+| Model | Decision | Reason |
+| --- | --- | --- |
+| `skillsafe-ai/isnet-general-use` | Removed | Output was unreliable during testing. Its 1024px graph also requires CPU WASM because WebGPU does not support its `ceil_mode` MaxPool shape computation. |
+| `briaai/RMBG-2.0` | Not browser-compatible | The published ONNX export fails browser session creation with a shape-inference mismatch. It needs a new PyTorch/ONNX export. |
+| `onnx-community/BiRefNet-ONNX` | Not browser-compatible | The preprocessor forces 1024×1024 inference, exhausting the browser's WASM memory heap. |
+| `onnx-community/BiRefNet_lite-ONNX` | Not browser-compatible | Despite its smaller weights, it also forces 1024×1024 inference and exhausts the browser WASM heap. |
+
+### Local RMBG-2.0 lab — native Node models
+
+`briaai/RMBG-2.0` can be tested locally by double-clicking
+[`start-rmbg2.bat`](start-rmbg2.bat), through the Node-only lab at `/rmbg2`, or with
+`npm run rmbg2`; it is not included in the deployed browser application. All three checkpoints
+are the same 1024×1024 model and require substantial native RAM while a session is loaded.
+
+| Checkpoint | Download | Estimated peak RAM | Minimum free RAM to start | Guidance |
+| --- | ---: | ---: | ---: | --- |
+| `onnx/model_q4f16.onnx` | 223 MB | ~9 GB | 12 GB | Default and recommended native option. |
+| `onnx/model_fp16.onnx` | 490 MB | ~14 GB | 20 GB | Diagnostic/reference option; use only on a machine with ample available memory. |
+| `onnx/model.onnx` | 977 MB | ~16 GB | 24 GB | fp32 reference option; slowest and most memory-intensive. |
+
+The lab rejects a run before loading ONNX when free physical RAM is below the checkpoint's
+threshold. This intentionally prevents RMBG-2.0 runs on 4 GB and 8 GB machines. Even on 16 GB,
+only q4f16 may be viable after closing memory-heavy applications. GUI runs release their native
+session after completion; this returns the multi-GB runtime allocation instead of retaining it
+while idle. See [`rmbg2-lab/README.md`](rmbg2-lab/README.md) for setup and troubleshooting.
 
 ---
 
@@ -109,47 +187,22 @@ PureCut/
 
 ---
 
-## 🗺️ Roadmap & Future Features
+## 🗺️ Roadmap
 
-### 🎯 Selection & Detection
-- [ ] **Dotted Cutout Outline** — Marching ants / dashed border animation around the detected subject for visual clarity before confirming the cutout.
-- [ ] **Auto-Detect Categories** — Automatically classify the subject (Human, Animal, Product, Vehicle, Food, etc.) and apply category-optimized AI settings.
-- [ ] **Multi-Subject Detection** — Detect and list all separate subjects in an image; let the user pick which ones to keep or remove individually.
-- [ ] **Polygon / Lasso Selection Tool** — Manual selection tool for precise boundary drawing when AI misses tricky areas.
-- [ ] **Magic Wand (Color-Based Selection)** — Click to select/deselect regions by color similarity, useful for solid-color backgrounds.
+### Done
+- [x] Selection tools: subject detection, lasso, rectangle, and magic wand.
+- [x] Zoom and pan workspace.
+- [x] Curated browser model catalogue with safe WASM fallback.
+- [x] Local Node RMBG-2.0 lab with RAM admission safeguards and live resource monitoring.
 
-### 🖌️ Brush & Editing
-- [ ] **Brush Hardness / Softness Slider** — Adjustable edge falloff on the brush for softer, more natural manual edits.
-- [ ] **Pressure-Sensitive Stylus Support** — Vary brush size/opacity based on pen pressure for tablet users (Wacom, iPad, Surface).
-- [ ] **Visual Undo History Panel** — Thumbnail strip showing each undo state for quick visual comparison and rollback.
-
-### 🖼️ Canvas & Viewport
-- [ ] **Zoom & Pan** — Pinch-to-zoom and scroll-to-zoom with pan for precision brush work on high-resolution images.
-- [ ] **Custom Background Replacement** — Upload or pick a custom photo/color as the new background behind the cutout.
-- [ ] **Multi-Layer Compositing** — Stack multiple cutout subjects onto a single canvas with drag-to-reposition.
-- [ ] **Side-by-Side Multi-View** — Compare cutout results from different models or settings simultaneously.
-
-### 📦 Batch & Workflow
-- [ ] **Batch Processing** — Drag-drop multiple images; process them all sequentially and download as a ZIP archive.
-- [ ] **Preset Export Profiles** — Save and reuse named combinations of tuning settings (e.g., "E-commerce Product", "LinkedIn Headshot").
-- [ ] **Processing Queue with Progress** — Visual queue showing each image's status when batch processing.
-
-### ⚡ Performance & Engine
-- [ ] **WebGPU Shader Post-Processing** — Move the pixel-level threshold/trim/de-fringe loop to a GPU compute shader for instant full-quality renders.
-- [ ] **Web Worker Offloading** — Run heavy compositing in a Web Worker to keep the UI thread always responsive.
-- [ ] **OffscreenCanvas** — Use `OffscreenCanvas` for the display preview to enable hardware-accelerated rendering off the main thread.
-
-### 🚀 Export & Sharing
-- [ ] **Multi-Format Export** — Export as JPEG (with white/custom background fill), WebP (smaller file size), or SVG trace.
-- [ ] **Custom Resolution Export** — Resize the output to specific dimensions (e.g., 1080×1080 for Instagram, 800×800 for e-commerce).
-- [ ] **Direct Social Sharing** — One-click share to Instagram, Twitter/X, or generate a shareable link.
-
-### 📱 Platform & UX
-- [ ] **Progressive Web App (PWA)** — Offline-capable installable app with service worker caching for model weights.
-- [ ] **Keyboard Shortcuts** — `B` for brush, `S` for slider, `[` / `]` to resize brush, `Ctrl+Z` for undo, `Space` to pan.
-- [ ] **Dark / Light Theme Toggle** — User-selectable theme beyond the current dark-slate default.
-- [ ] **Drag-to-Reorder Results Gallery** — Keep a gallery of recent cutouts in the current session for quick re-download.
-- [ ] **Mobile-Optimized Touch UI** — Responsive layout with larger touch targets, gesture controls, and mobile-friendly brush interaction.
+### Planned
+- [ ] Brush hardness / softness and pressure-sensitive stylus support.
+- [ ] Visual undo history and named export presets.
+- [ ] Custom background replacement and multi-layer compositing.
+- [ ] Batch processing with ZIP download.
+- [ ] WebGPU post-processing and Web Worker compositing.
+- [ ] Multi-format and custom-resolution exports.
+- [ ] Keyboard shortcuts, PWA support, and mobile-optimized controls.
 
 ---
 

@@ -1,4 +1,6 @@
-export const appVersion = '1.4.0'
+export const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.5.0'
+export const appBuildHash = typeof __APP_BUILD_HASH__ !== 'undefined' ? __APP_BUILD_HASH__ : 'dev'
+export const appBuildTime = typeof __APP_BUILD_TIME__ !== 'undefined' ? __APP_BUILD_TIME__ : ''
 
 export const modelOptions = [
   { id: 'briaai/RMBG-1.4', name: 'BRIA RMBG-1.4 (SOTA · Recommended)', size: '43 MB', engine: 'transformers', dtype: 'q8', desc: 'State-of-the-art accuracy on difficult clothes, hair, reflections, and complex poses.' },
@@ -9,17 +11,29 @@ export const modelOptions = [
   // BiRefNet / RMBG-2.0 checkpoints do NOT run in-browser - see "Model catalogue" in
   // AGENTS.md before changing this list or the downscale ladder in aiEngine.js.
   { id: 'onnx-community/BiRefNet_512x512-ONNX', name: 'BiRefNet 512 (Highest Quality · CPU Only)', size: '473 MB', engine: 'transformers', dtype: 'fp16', forceWasm: true, desc: 'BiRefNet - the architecture behind BRIA RMBG-2.0 - at a 512px working resolution so it fits the browser WASM heap. Very large download and the slowest option here.' },
-  { id: 'skillsafe-ai/u2netp', name: 'U²-Net-p (Ultra-Lightweight · Rembg)', size: '4.4 MB', engine: 'onnx', dtype: 'fp32', desc: 'Lightweight U²-Net portrait and salient object segmentation (only 4.4 MB, ideal for fast background removal).' },
-  { id: 'skillsafe-ai/u2net', name: 'U²-Net (Full Salient Cutout · Rembg)', size: '176 MB', engine: 'onnx', dtype: 'fp32', desc: 'Full-capacity U²-Net architecture for deep salient object segmentation and crisp edges.' },
-  { id: 'skillsafe-ai/u2net-human-seg', name: 'U²-Net Human Seg (Portrait Specialist)', size: '176 MB', engine: 'onnx', dtype: 'fp32', desc: 'Specialized U²-Net model fine-tuned specifically for human figures, portraits, and clothing.' },
-  { id: 'skillsafe-ai/isnet-general-use', name: 'IS-Net General Use (1024px High-Res Rembg)', size: '179 MB', engine: 'onnx', dtype: 'fp32', desc: 'Full 1024x1024 Dichotomous Image Segmentation model from Rembg for high-fidelity cutouts.' }
+  { id: 'skillsafe-ai/u2netp', name: 'U²-Net-p (Ultra-Lightweight · Rembg)', size: '4.4 MB', engine: 'onnx', dtype: 'fp32', active: false, desc: 'Inactive: retained for future evaluation; MaxPool ceil_mode requires CPU WASM.' },
+  { id: 'skillsafe-ai/u2net', name: 'U²-Net (Full Salient Cutout · Rembg)', size: '176 MB', engine: 'onnx', dtype: 'fp32', active: false, desc: 'Inactive: retained for future evaluation; MaxPool ceil_mode requires CPU WASM.' },
+  { id: 'skillsafe-ai/u2net-human-seg', name: 'U²-Net Human Seg (Portrait Specialist)', size: '176 MB', engine: 'onnx', dtype: 'fp32', active: false, desc: 'Inactive: retained for future evaluation; MaxPool ceil_mode requires CPU WASM.' }
 ]
+
+/** Models exposed in the studio pickers. Inactive entries remain catalogued for cache cleanup and future evaluation. */
+export const activeModelOptions = modelOptions.filter((model) => model.active !== false)
 
 export const changelog = [
   {
+    version: '1.5.0',
+    date: '2026-09-27',
+    tag: 'Latest',
+    changes: [
+      { type: 'new', text: 'Added the local Node-based RMBG-2.0 lab with checkpoint memory safeguards and live resource monitoring.' },
+      { type: 'perf', text: 'Curated the browser model picker: inactive U²-Net models are hidden and unsupported graphs use CPU WASM.' },
+      { type: 'fix', text: 'Removed unreliable IS-Net General Use output and fixed the SkillSafe WASM fallback result state.' }
+    ]
+  },
+  {
     version: '1.4.0',
     date: '2026-09-18',
-    tag: 'Latest',
+    tag: 'Previous',
     changes: [
       { type: 'new', text: 'DIS / IS-Net (42 MB ONNX) integration: High-precision Dichotomous Image Segmentation model with zero-memory-leak inference' },
       { type: 'perf', text: 'Smart Multi-pass Preprocessing: Safe canvas scaling prevents 32-bit WASM std::bad_alloc OOM across Opera GX, Chrome & Firefox' },
@@ -92,6 +106,7 @@ export const roadmap = [
       { text: 'Multi-subject detection — pick which subjects to keep or remove', status: 'done' },
       { text: 'Polygon / Lasso selection tool for precise manual boundaries', status: 'done' },
       { text: 'Magic Wand — color-based region selection', status: 'done' },
+      { text: 'Curated browser model catalogue with safe WASM fallback', status: 'done' },
     ]
   },
   {
@@ -120,6 +135,7 @@ export const roadmap = [
   {
     category: '⚡ Performance',
     items: [
+      { text: 'RMBG-2.0 local Node lab with memory admission safeguards', status: 'done' },
       { text: 'WebGPU compute shader post-processing', status: 'planned' },
       { text: 'Web Worker offloading for compositing', status: 'planned' },
     ]

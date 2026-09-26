@@ -24,7 +24,7 @@
  * AI-context refactor; no behaviour was changed.
  */
 import { SlidersHorizontal, Wrench, Layers, Cpu } from 'lucide-vue-next'
-import { modelOptions } from '../constants.js'
+import { activeModelOptions } from '../constants.js'
 
 defineProps({
   /** 'standard' | 'power' */
@@ -168,7 +168,7 @@ defineEmits(['apply-preset', 'recomposite', 'model-change', 'device-change', 'tt
         <div class="engine-row">
           <label><Layers :size="12" /> Model:</label>
           <select :value="selectedModel" class="sidebar-select" @change="$emit('model-change', $event)">
-            <option v-for="m in modelOptions" :key="m.id" :value="m.id">
+            <option v-for="m in activeModelOptions" :key="m.id" :value="m.id">
               {{ m.name }}
             </option>
           </select>
