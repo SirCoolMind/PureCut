@@ -408,7 +408,23 @@ defineEmits([
   }
 
   .btn-benchmark-nav {
-    display: none;
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    justify-content: center;
+    padding: 0;
+    margin: 0;
+    border-radius: 7px;
+    gap: 0;
+  }
+
+  .btn-benchmark-nav :deep(svg) {
+    width: 14px;
+    height: 14px;
+  }
+
+  .btn-benchmark-nav {
+    font-size: 0;
   }
 
   .model-status-bar {

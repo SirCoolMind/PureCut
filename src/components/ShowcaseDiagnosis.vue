@@ -16,7 +16,7 @@
 import { Check, ShieldAlert } from 'lucide-vue-next'
 
 defineProps({
-  /** Key of the model currently selected in the host: rmbg | isnet | modnet. */
+  /** Key of the model currently selected in the host. */
   model: {
     type: String,
     required: true
@@ -49,8 +49,8 @@ defineProps({
           <span class="tele-val">{{ modelsData[model].executionTime }}</span>
         </div>
         <div class="tele-item">
-          <span class="tele-label">RAM Heap Peak</span>
-          <span class="tele-val">~180 MB (Protected)</span>
+          <span class="tele-label">Memory Profile</span>
+          <span class="tele-val">{{ modelsData[model].memoryProfile }}</span>
         </div>
       </div>
 
@@ -213,5 +213,39 @@ defineProps({
   color: #f59e0b;
   flex-shrink: 0;
   margin-top: 2px;
+}
+
+@media (max-width: 767px) {
+  .model-diagnosis-card {
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .diagnosis-header h3 {
+    font-size: 1.05rem;
+  }
+
+  .model-arch {
+    line-height: 1.4;
+  }
+
+  .score-badge {
+    flex-shrink: 0;
+    padding: 0.3rem 0.5rem;
+  }
+
+  .telemetry-row {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .tele-item {
+    padding: 0.6rem 0.7rem;
+  }
+
+  .summary-text,
+  .eval-list li {
+    font-size: 0.82rem;
+  }
 }
 </style>

@@ -317,4 +317,71 @@ const sliderPos = defineModel({ type: Number, required: true })
 .btn-download-cutout:hover {
   background: #1d4ed8;
 }
+
+@media (max-width: 767px) {
+  .card-bar {
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.7rem 0.8rem;
+  }
+
+  .card-bar-left {
+    font-size: 0.76rem;
+    line-height: 1.35;
+  }
+
+  .card-bar-right {
+    display: none;
+  }
+
+  .slider-stage-viewport {
+    height: min(118vw, 460px);
+  }
+
+  .stage-badge {
+    top: 0.65rem;
+    max-width: calc(50% - 1rem);
+    overflow: hidden;
+    padding: 0.3rem 0.45rem;
+    font-size: 0.65rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .badge-orig {
+    left: 0.65rem;
+  }
+
+  .badge-cutout {
+    right: 0.65rem;
+  }
+
+  .slider-pill-handle {
+    padding: 0.35rem 0.5rem;
+  }
+
+  .stage-footer-actions {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.65rem;
+    padding: 0.75rem;
+  }
+
+  .slider-quick-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.4rem;
+  }
+
+  .btn-subtle {
+    min-height: 34px;
+    padding: 0.35rem 0.25rem;
+    font-size: 0.67rem;
+  }
+
+  .btn-download-cutout {
+    justify-content: center;
+    min-height: 42px;
+  }
+}
 </style>

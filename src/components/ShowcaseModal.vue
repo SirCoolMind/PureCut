@@ -37,7 +37,7 @@ const emit = defineEmits(['back', 'cycle-font-size'])
 
 const baseUrl = import.meta.env.BASE_URL || './'
 
-const activeModel = ref('rmbg') // 'rmbg' | 'isnet' | 'modnet'
+const activeModel = ref('rmbg') // 'rmbg' | 'isnet' | 'modnet' | 'birefnet'
 const sliderPos = ref(50)
 const backdropBg = ref('checkerboard') // 'checkerboard' | 'white' | 'dark'
 
@@ -49,8 +49,9 @@ const modelsData = {
     badgeClass: 'badge-recommended',
     architecture: 'Segformer / BiSeNet Backbone (43 MB)',
     rating: '9.8 / 10',
-    executionTime: '~6.8s (WASM SIMD) / ~1.8s (WebGPU)',
-    cutoutSrc: `${baseUrl}giselle-rmbg.png`,
+    executionTime: '~7.9s (WASM SIMD, TTA)',
+    memoryProfile: '~180 MB protected WASM heap',
+    cutoutSrc: `${baseUrl}giselle-rmbg-tta.png`,
     pros: [
       'Preserves complete seated body pose with zero gaps',
       'Flawless separation of oversized grey sweatpants and denim boots',
@@ -60,7 +61,7 @@ const modelsData = {
     cons: [
       'Slightly higher compute requirement than MODNet'
     ],
-    summary: 'The top-tier choice for general e-commerce, complex fashion poses, and challenging studio photography. Completely preserved Giselle’s whole outfit and background elevator walls.'
+    summary: 'The best all-round choice for e-commerce, complex fashion poses, and challenging studio photos. This showcase uses the default two-pass TTA Flip Fusion, preserving the complete outfit and cleanly separating it from the elevator walls.'
   },
   isnet: {
     id: 'onnx-community/ISNet-ONNX',
@@ -69,8 +70,9 @@ const modelsData = {
     badgeClass: 'badge-precision',
     architecture: 'Dichotomous Image Segmentation (U-Net DIS)',
     rating: '8.7 / 10',
-    executionTime: '~2.8s (WASM SIMD) / ~0.9s (WebGPU)',
-    cutoutSrc: `${baseUrl}giselle-isnet.png`,
+    executionTime: '~13.0s (WASM SIMD, TTA)',
+    memoryProfile: 'Lightweight browser WASM workload',
+    cutoutSrc: `${baseUrl}giselle-isnet-tta.png`,
     pros: [
       'Very fast and memory-efficient (zero WASM memory leaks)',
       'Sharp face, hair, cap, and boot contours',
@@ -80,7 +82,7 @@ const modelsData = {
       'Minor softening on low-contrast light grey fabric against reflective stainless steel',
       'Lower torso fabric exhibits partial transparency without tuning'
     ],
-    summary: 'A fast, lightweight salient object segmentation model. Ideal for snappy workflows and devices with constrained RAM.'
+    summary: 'A fast, lightweight salient-object segmentation model that keeps strong contour detail while remaining a practical choice for constrained devices. This showcase uses the default two-pass TTA Flip Fusion.'
   },
   modnet: {
     id: 'Xenova/modnet',
@@ -89,8 +91,9 @@ const modelsData = {
     badgeClass: 'badge-portrait',
     architecture: 'Objective-Decomposed Portrait Matting',
     rating: '7.0 / 10 (Pose Dependent)',
-    executionTime: '~4.5s (WASM SIMD) / ~0.7s (WebGPU)',
-    cutoutSrc: `${baseUrl}giselle-modnet.png`,
+    executionTime: '~7.6s (WASM SIMD, TTA)',
+    memoryProfile: 'Smallest model; suited to modest devices',
+    cutoutSrc: `${baseUrl}giselle-modnet-tta.png`,
     pros: [
       'Ultra-lightweight (only 20 MB download)',
       'Clean alpha gradient along hair strands and head silhouette',
@@ -100,7 +103,29 @@ const modelsData = {
       'Trained strictly on upright human portraits; misses torso/lower body in sitting/non-standard poses',
       'Split subjects detected due to occlusion'
     ],
-    summary: 'Specialized for webcam, passport, and upright head-and-shoulder portrait photography. For full-body sitting fashion shots, RMBG-1.4 or IS-Net is recommended.'
+    summary: 'Specialized for webcam, passport, and upright head-and-shoulder portraits. This showcase uses the default two-pass TTA Flip Fusion. It is not designed for a seated full-body fashion photo; choose RMBG-1.4 or BiRefNet for that use case.'
+  },
+  birefnet: {
+    id: 'onnx-community/BiRefNet_512x512-ONNX',
+    name: 'BiRefNet 512',
+    badge: 'Highest Quality · CPU WASM',
+    badgeClass: 'badge-quality',
+    architecture: 'BiRefNet 512 × 512 · Two-Pass TTA Flip Fusion',
+    rating: '9.9 / 10',
+    executionTime: '~55.9s (CPU WASM, TTA)',
+    memoryProfile: 'Large WASM workload; allow ample free memory',
+    cutoutSrc: `${baseUrl}giselle-birefnet-tta.png`,
+    pros: [
+      'Highest-detail TTA result in the browser model catalogue',
+      'Preserves the full seated pose, including hands, hair, shoes, and clothing edges',
+      'Two-pass flip fusion refines difficult asymmetric details and fine boundaries',
+      'Runs fully on-device with the browser-safe 512 × 512 BiRefNet checkpoint'
+    ],
+    cons: [
+      'Large 473 MB download before first use',
+      'CPU WASM only; the two-pass TTA workflow is intentionally slower'
+    ],
+    summary: 'The quality-first browser option. This showcase uses the same two-pass TTA Flip Fusion enabled by default in PureCut, giving the most complete cutout for this challenging seated fashion pose.'
   }
 }
 
@@ -399,6 +424,12 @@ function downloadCutout(modelKey) {
   border: 1px solid rgba(168, 85, 247, 0.4);
 }
 
+.badge-quality {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+}
+
 /*
  * The two-column stage layout. This rule belongs to the HOST, not to
  * ShowcaseSliderStage: it lays out that child's root element AND the
@@ -415,6 +446,99 @@ function downloadCutout(modelKey) {
 @media (max-width: 1024px) {
   .stage-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .showcase-header {
+    align-items: stretch;
+    gap: 0.65rem;
+    padding: 0.7rem 0.8rem;
+  }
+
+  .header-left {
+    min-width: 0;
+    gap: 0.65rem;
+  }
+
+  .btn-back {
+    flex-shrink: 0;
+    padding: 0.55rem;
+  }
+
+  .btn-back span,
+  .header-divider,
+  .showcase-tag,
+  .showcase-title-box h2,
+  .picker-label,
+  .header-right > .btn-font-scale {
+    display: none;
+  }
+
+  .showcase-title-box::after {
+    content: 'Model Showcase';
+    color: #f8fafc;
+    font-size: 0.95rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .header-right {
+    margin-left: auto;
+  }
+
+  .backdrop-picker {
+    gap: 0.1rem;
+    padding: 0.2rem;
+  }
+
+  .btn-bg-choice {
+    min-height: 32px;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.72rem;
+  }
+
+  .showcase-content {
+    padding: 0.9rem;
+    gap: 1rem;
+  }
+
+  .model-selector-nav {
+    margin: 0 -0.9rem;
+    padding: 0 0.9rem 0.25rem;
+    gap: 0.55rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .model-selector-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .model-nav-btn {
+    flex: 0 0 150px;
+    min-height: 76px;
+    align-items: flex-start;
+    justify-content: center;
+    flex-direction: column;
+    gap: 0.45rem;
+    padding: 0.7rem 0.8rem;
+  }
+
+  .model-nav-name {
+    font-size: 0.84rem;
+  }
+
+  .model-nav-badge {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .stage-grid {
+    gap: 1rem;
   }
 }
 

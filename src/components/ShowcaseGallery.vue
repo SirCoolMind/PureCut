@@ -1,6 +1,6 @@
 <script setup>
 /**
- * ShowcaseGallery — the bottom "All Models Side-by-Side Comparison" 4-column
+ * ShowcaseGallery — the bottom "All Models Side-by-Side Comparison" gallery
  * gallery of the Showcase modal.
  *
  * Extracted from `ShowcaseModal.vue` (session 4) together with its scoped CSS,
@@ -30,7 +30,7 @@ defineProps({
     type: String,
     required: true
   },
-  /** The host's full model metadata table (only `name` is used here). */
+  /** The host's full model metadata table. */
   modelsData: {
     type: Object,
     required: true
@@ -44,8 +44,8 @@ const emit = defineEmits(['select'])
   <div class="gallery-overview-section">
     <div class="gallery-title-row">
       <div>
-        <h3>All Models Side-by-Side Comparison</h3>
-        <p>Direct comparison of the test photo across the input and all 3 model cutouts.</p>
+        <h3>Same photo. Four browser-model cutouts.</h3>
+        <p>All four outputs use the default two-pass TTA Flip Fusion, generated through the actual browser pipeline with the same settings PureCut applies in the studio.</p>
       </div>
     </div>
 
@@ -64,45 +64,21 @@ const emit = defineEmits(['select'])
         </div>
       </div>
 
-      <!-- Column 2: RMBG-1.4 -->
-      <div :class="['gallery-card', { highlight: activeModel === 'rmbg' }]" @click="emit('select', 'rmbg')">
+      <div
+        v-for="(model, key) in modelsData"
+        :key="key"
+        :class="['gallery-card', { highlight: activeModel === key }]"
+        @click="emit('select', key)"
+      >
         <div class="gcard-header">
-          <span class="gcard-title">BRIA RMBG-1.4</span>
-          <span class="gcard-tag tag-sota">SOTA Cutout</span>
+          <span class="gcard-title">{{ model.name }}</span>
+          <span :class="['gcard-tag', model.badgeClass]">{{ model.badge }}</span>
         </div>
         <div :class="['gcard-media-box', `bg-${backdropBg}`]">
-          <img :src="`${baseUrl}giselle-rmbg.png`" alt="RMBG-1.4 Cutout" />
+          <img :src="model.cutoutSrc" :alt="`${model.name} cutout`" />
         </div>
         <div class="gcard-caption">
-          <strong>100% full pose preserved</strong>: Boots, pants, black long-sleeve, hair strands, and cap.
-        </div>
-      </div>
-
-      <!-- Column 3: IS-Net -->
-      <div :class="['gallery-card', { highlight: activeModel === 'isnet' }]" @click="emit('select', 'isnet')">
-        <div class="gcard-header">
-          <span class="gcard-title">DIS / IS-Net</span>
-          <span class="gcard-tag tag-isnet">Salient Cutout</span>
-        </div>
-        <div :class="['gcard-media-box', `bg-${backdropBg}`]">
-          <img :src="`${baseUrl}giselle-isnet.png`" alt="IS-Net Cutout" />
-        </div>
-        <div class="gcard-caption">
-          Clean head and boot boundaries. Slight alpha feathering on grey sweatpants.
-        </div>
-      </div>
-
-      <!-- Column 4: MODNet -->
-      <div :class="['gallery-card', { highlight: activeModel === 'modnet' }]" @click="emit('select', 'modnet')">
-        <div class="gcard-header">
-          <span class="gcard-title">MODNet</span>
-          <span class="gcard-tag tag-modnet">Portrait Matting</span>
-        </div>
-        <div :class="['gcard-media-box', `bg-${backdropBg}`]">
-          <img :src="`${baseUrl}giselle-modnet.png`" alt="MODNet Cutout" />
-        </div>
-        <div class="gcard-caption">
-          Portrait model captures upper face and lower boots; torso omitted due to pose orientation.
+          {{ model.summary }}
         </div>
       </div>
     </div>
@@ -200,6 +176,26 @@ const emit = defineEmits(['select'])
   color: #c084fc;
 }
 
+.badge-recommended {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.badge-precision {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+}
+
+.badge-portrait {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+}
+
+.badge-quality {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+}
+
 .gcard-media-box {
   width: 100%;
   height: 320px;
@@ -227,5 +223,45 @@ const emit = defineEmits(['select'])
 
 .gcard-caption strong {
   color: #e2e8f0;
+}
+
+@media (max-width: 767px) {
+  .gallery-overview-section {
+    gap: 0.75rem;
+    margin-top: 0;
+  }
+
+  .gallery-title-row h3 {
+    font-size: 1rem;
+    line-height: 1.3;
+  }
+
+  .gallery-title-row p {
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+
+  .side-by-side-grid {
+    grid-template-columns: 1fr;
+    gap: 0.8rem;
+  }
+
+  .gcard-header {
+    padding: 0.65rem 0.75rem;
+  }
+
+  .gcard-title {
+    font-size: 0.85rem;
+  }
+
+  .gcard-media-box {
+    height: min(105vw, 400px);
+  }
+
+  .gcard-caption {
+    padding: 0.7rem 0.75rem;
+    font-size: 0.8rem;
+    line-height: 1.45;
+  }
 }
 </style>
