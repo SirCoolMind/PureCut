@@ -37,31 +37,19 @@ const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'
 const SettingsModal = defineAsyncComponent(() => import('./components/SettingsModal.vue'))
 const ShowcaseModal = defineAsyncComponent(() => import('./components/ShowcaseModal.vue'))
 
-// --- State ---
 const showBenchmarkPage = ref(false)
 const originalUrl = ref(null)
 const resultUrl = ref(null)
 const resultBlob = ref(null)
 
-// Mask canvases for non-destructive editing & brush. The handles live in
-// src/core/canvasStore.ts as non-reactive module bindings, so extracted tools can
-// reach the live canvas without threading it through every function signature.
-
-// fileName / fileSize are owned by useProcessing (wired below).
 const imageDimensions = reactive({ width: 0, height: 0 })
 
-// Processing & telemetry. isProcessing / isPreloading / downloadProgress are owned
-// by useProcessing (wired below); statusMessage stays declared here because
-// useModelCache, useProcessing and the template all read or write it.
 const statusMessage = ref('')
-// Filled in by processImage() once inference completes. See useTelemetry.
 const { telemetry } = useTelemetry()
 
 const selectedModel = ref('briaai/RMBG-1.4')
 const selectedDevice = ref('gpu') // 'gpu' | 'cpu'
 
-// Model cache state + the "clear cached models" flow. See useModelCache.
-// cachedModels is flipped in place by processImage/handlePreload below.
 const {
   cachedModels,
   isClearingCache,
@@ -74,21 +62,17 @@ const {
 
 const showSettingsModal = ref(false)
 
-// UI Modes & Tools
 const { userMode, activeTool, sliderPosition, previewBg, copied } = useWorkspaceUi()
-const displayCanvasRef = ref(null) // Live GPU-composited preview canvas
-const selectionCanvasRef = ref(null) // Dotted marching ants selection overlay
+const displayCanvasRef = ref(null)
+const selectionCanvasRef = ref(null)
 
-// Selection (Marching Ants) Tool System
-const selectShape = ref('magnetic') // 'magnetic' | 'lasso' | 'rect' | 'polygon' | 'wand'
+const selectShape = ref('magnetic')
 const isSelecting = ref(false)
 const selectionBox = reactive({ startX: 0, startY: 0, currentX: 0, currentY: 0 })
 const lassoPoints = ref([])
-const activeSelection = ref(null) // { type: 'rect', x, y, width, height } | { type: 'lasso', points: [] } | { type: 'wand', points: [], visitedMask: Uint8Array, ... }
+const activeSelection = ref(null)
 const hasSelection = computed(() => !!activeSelection.value || (selectShape.value === 'polygon' && isSelecting.value && lassoPoints.value.length > 0))
 const wandTolerance = ref(25)
-
-// Zoom & pan for the viewport. See useZoomPan.
 
 const {
   zoomLevel,
@@ -103,7 +87,6 @@ const {
   onPanEnd
 } = useZoomPan({ resultUrl, activeTool })
 
-// Display scaling: font size (persisted) and browser zoom. See useDisplayScale.
 const {
   fontSize,
   applyFontSize,
@@ -114,27 +97,17 @@ const {
   resetBrowserZoom
 } = useDisplayScale()
 
-// Canvas compositing: fast GPU preview + debounced full-quality export, and the
-// tuning parameters they read. See useCompositor. Wired before the tool
-// composables below, which take these as callbacks.
 const { tuning, applyPreset, renderFastPreview, schedulePreview, recompositeCanvas, clearPendingPreview } =
   useCompositor({ imageDimensions, resultUrl, resultBlob, displayCanvasRef })
 
-// Mask history: undo / redo / reset-to-raw-AI-mask. See useUndoRedo.
 const { undoHistory, redoHistory, saveUndoState, handleUndo, handleRedo, resetBrush } =
   useUndoRedo({ imageDimensions, recompositeCanvas })
 
-// Detected subjects + the drawer that hides/erases them. See useSubjects.
-// processImage() seeds detectedSubjects and may auto-open the drawer.
 const { detectedSubjects, showSubjectsDrawer, toggleSubjectVisibility, eraseSubject, refreshDetectionData } =
   useSubjects({ saveUndoState, recompositeCanvas })
 
-// The file currently loaded. Declared here rather than inside useImageInput because
-// the intake composable needs processImage (so useProcessing must be wired first)
-// and useProcessing needs the file.
 const currentFileBlob = ref(null)
 
-// The AI pipeline plus the preload and model-change-prompt flows. See useProcessing.
 const {
   isProcessing,
   isPreloading,
@@ -172,8 +145,6 @@ const {
   saveUndoState
 })
 
-// Image intake: picker, drag & drop, paste, copy, and the two discard prompts
-// (replace-image for incoming files, start-over for the New button).
 const {
   fileInput,
   showReplaceImagePrompt,
@@ -199,9 +170,6 @@ function setFileInput(el) {
   fileInput.value = el
 }
 
-// Same trick for the viewport's two canvases: useCompositor owns the display
-// canvas and useSelectionOverlay the selection canvas, and both read the refs
-// App.vue created, so the element has to be handed back here.
 function setDisplayCanvas(el) {
   displayCanvasRef.value = el
 }
@@ -210,16 +178,11 @@ function setSelectionCanvas(el) {
   selectionCanvasRef.value = el
 }
 
-// The animated contour outline is currently inert - nothing calls toggleOutline(),
-// so showOutline is only ever read (by the template). See AGENTS.md known issues.
 const { showOutline } = useOutlineOverlay({ imageDimensions, zoomLevel })
 
-// Brush: pointer painting straight onto the mask. See useBrush.
 const { brushMode, brushSize, onPointerDown, onPointerMove, onPointerUp } =
   useBrush({ activeTool, getCanvasCoords, schedulePreview, saveUndoState, recompositeCanvas })
 
-// Marching-ants overlay renderer. It owns only the ants animation; the selection
-// state it draws belongs to the selection tools. See useSelectionOverlay.
 const { startAntsAnimation, stopAntsAnimation } =
   useSelectionOverlay({
     selectionCanvasRef,
@@ -234,8 +197,6 @@ const { startAntsAnimation, stopAntsAnimation } =
     hasSelection
   })
 
-// Selection tools: magnetic lasso, freehand lasso, rect, polygon, magic wand.
-// See useSelectionTools - it shares the selection state above with the overlay.
 const { onSelectPointerDown, onSelectPointerMove, onSelectPointerUp, clearSelection, applySelectionAction } =
   useSelectionTools({
     imageDimensions,
@@ -255,8 +216,6 @@ const { onSelectPointerDown, onSelectPointerMove, onSelectPointerUp, clearSelect
     wandTolerance
   })
 
-// Global keyboard shortcuts (undo/redo, and the selection editing keys).
-// See useKeyboardShortcuts - the listener itself is registered in onMounted.
 const { onKeyDown } = useKeyboardShortcuts({
   handleUndo,
   handleRedo,
@@ -268,16 +227,7 @@ const { onKeyDown } = useKeyboardShortcuts({
   selectShape
 })
 
-// Modal State
 const showInfoModal = ref(false)
-
-// Model cache status, storage-size reporting and clearing now live in
-// src/composables/useModelCache.ts.
-
-// The preload flow now lives in src/composables/useProcessing.ts.
-
-// Preset handling (`applyPreset`) lives in src/composables/useCompositor.ts, and
-// formatBytes in src/core/format.ts (imported above).
 
 // Pointer → image-pixel mapping. The maths lives in src/core/geometry.ts so it can
 // be unit-tested without a DOM; this adapter only reads the live viewport box and
@@ -343,15 +293,11 @@ function reset() {
   redoHistory.value = []
 }
 
-// "New" no longer resets straight away: a workspace full of brush and selection
-// work is expensive to lose, so useImageInput raises the confirm prompt first and
-// this only runs once the user accepts.
 function confirmStartOver() {
   confirmNewImage()
   reset()
 }
 
-// When switching modes, initialize preview or manage selection state
 watch(activeTool, (newTool) => {
   if (newTool === 'brush' && originalCanvas && maskCanvas) {
     nextTick(() => {
@@ -388,7 +334,6 @@ onUnmounted(() => {
 
 <template>
   <div class="app-shell" :class="{ 'in-workspace': !!originalUrl }">
-    <!-- Navbar (Fixed 48px height) -->
     <Navbar
       :is-processing="isProcessing"
       :is-preloading="isPreloading"
@@ -412,9 +357,7 @@ onUnmounted(() => {
       @update:user-mode="userMode = $event"
     />
 
-    <!-- Main Content Area (Zero Window Scroll) -->
     <main class="main-content">
-      <!-- VIEW 1: Upload Dropzone -->
       <UploadHero
         v-if="!originalUrl"
         :input-ref="setFileInput"
@@ -423,7 +366,6 @@ onUnmounted(() => {
         @select="onFileSelect"
       />
 
-      <!-- VIEW 2: Processing Overlay (Clean, Non-overlapping UI) -->
       <ProcessingOverlay
         v-else-if="isProcessing"
         :status-message="statusMessage"
@@ -431,11 +373,8 @@ onUnmounted(() => {
         :telemetry="telemetry"
       />
 
-      <!-- VIEW 3: Studio Workspace (2-Column Zero-Scroll Layout) -->
       <section v-else class="studio-workspace">
-        <!-- LEFT COLUMN: Canvas Stage -->
         <div class="stage-column">
-          <!-- Top Info & Tool Selector Bar -->
           <StageHeader
             :file-name="fileName"
             :image-dimensions="imageDimensions"
@@ -454,7 +393,6 @@ onUnmounted(() => {
             @copy="copyToClipboard"
           />
 
-          <!-- Dynamic Viewport with Wheel Zoom & Pan Support -->
           <CanvasViewport
             :preview-bg="previewBg"
             :active-tool="activeTool"
@@ -493,7 +431,6 @@ onUnmounted(() => {
             @reset-zoom="resetZoom"
           />
 
-          <!-- Stage Footer: Hint & Actions -->
           <StageFooter
             :active-tool="activeTool"
             :brush-mode="brushMode"
@@ -513,7 +450,6 @@ onUnmounted(() => {
           />
         </div>
 
-        <!-- RIGHT COLUMN: Tuning Sidebar -->
         <TuningSidebar
           :user-mode="userMode"
           :tuning="tuning"
@@ -530,7 +466,6 @@ onUnmounted(() => {
       </section>
     </main>
 
-    <!-- Model Change Confirmation Prompt Modal -->
     <ModelChangePrompt
       :show="showModelChangePrompt"
       :pending-model-id="pendingModelId"
@@ -540,7 +475,6 @@ onUnmounted(() => {
       @confirm="confirmModelRerun"
     />
 
-    <!-- Paste / Replace Image Confirmation Prompt Modal -->
     <ReplaceImagePrompt
       :show="showReplaceImagePrompt"
       :pending-new-image-thumbnail="pendingNewImageThumbnail"
@@ -550,7 +484,6 @@ onUnmounted(() => {
       @confirm="confirmReplaceImage"
     />
 
-    <!-- "New" / Start Over Confirmation Prompt Modal -->
     <NewImageConfirmPrompt
       :show="showNewImagePrompt"
       :current-image-thumbnail="originalUrl"
@@ -560,7 +493,6 @@ onUnmounted(() => {
       @confirm="confirmStartOver"
     />
 
-    <!-- Version / Changelog / Roadmap / Storage Modal -->
     <SettingsModal
       :show="showSettingsModal"
       @close="showSettingsModal = false"
@@ -578,7 +510,6 @@ onUnmounted(() => {
       @clear-cache="clearAllCache"
     />
 
-    <!-- Giselle Model Benchmark Showcase Page -->
     <ShowcaseModal
       v-if="showBenchmarkPage"
       :font-size="fontSize"
