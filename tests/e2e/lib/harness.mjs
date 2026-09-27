@@ -141,7 +141,9 @@ export async function readTuning(page) {
   await page.locator('.mode-btn:has-text("Power User")').click()
   await page.waitForTimeout(250)
   const values = await page.locator('.tune-slider').evaluateAll((els) => els.map((el) => el.value))
-  const deFringe = (await page.locator('.toggle-pill').innerText()).trim()
+  // Power mode has two `.toggle-pill`s (De-fringe and TTA Flip Fusion); read the
+  // de-fringe one specifically so the assertion stays tied to what it names.
+  const deFringe = (await page.locator('.tune-group:has-text("De-fringe") .toggle-pill').innerText()).trim()
   await page.locator('.mode-btn:has-text("Standard")').click()
   await page.waitForTimeout(250)
   return { values, deFringe }

@@ -19,6 +19,7 @@ import { useCompositor } from './composables/useCompositor.js'
 import { useModelCache } from './composables/useModelCache.js'
 import { useKeyboardShortcuts } from './composables/useKeyboardShortcuts.js'
 import { useProcessing } from './composables/useProcessing.js'
+import { useTutorial } from './composables/useTutorial.js'
 import ProcessingOverlay from './components/ProcessingOverlay.vue'
 import UploadHero from './components/UploadHero.vue'
 import ModelChangePrompt from './components/ModelChangePrompt.vue'
@@ -31,6 +32,7 @@ import StageFooter from './components/StageFooter.vue'
 import TuningSidebar from './components/TuningSidebar.vue'
 import Navbar from './components/Navbar.vue'
 import CanvasViewport from './components/CanvasViewport.vue'
+import TutorialOverlay from './components/TutorialOverlay.vue'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -178,6 +180,24 @@ function setSelectionCanvas(el) {
   selectionCanvasRef.value = el
 }
 
+// Bundled demo photo, resolved against Vite's BASE_URL so it also works from the
+// GitHub Pages sub-path. It is prefixed with the base by the same convention the
+// showcase assets use; processing then follows the normal upload path.
+const sampleSrc = `${import.meta.env.BASE_URL}Example1.jpg`
+
+/** Fetch the bundled sample and run it through the UI's own intake path. */
+async function loadSampleImage() {
+  try {
+    const res = await fetch(sampleSrc)
+    if (!res.ok) return
+    const blob = await res.blob()
+    const file = new File([blob], 'Example1.jpg', { type: blob.type || 'image/jpeg' })
+    confirmAndProcessImage(file)
+  } catch (err) {
+    console.error('Sample image load failed:', err)
+  }
+}
+
 const { showOutline } = useOutlineOverlay({ imageDimensions, zoomLevel })
 
 const { brushMode, brushSize, onPointerDown, onPointerMove, onPointerUp } =
@@ -228,6 +248,20 @@ const { onKeyDown } = useKeyboardShortcuts({
 })
 
 const showInfoModal = ref(false)
+
+const {
+  tutorialOpen,
+  stepIndex,
+  currentStep,
+  visibleSteps,
+  isLastStep,
+  tutorialHintSeen,
+  openTutorial,
+  closeTutorial,
+  nextStep,
+  prevStep,
+  goToStep
+} = useTutorial({ originalUrl, isProcessing })
 
 // Pointer → image-pixel mapping. The maths lives in src/core/geometry.ts so it can
 // be unit-tested without a DOM; this adapter only reads the live viewport box and
@@ -346,6 +380,7 @@ onUnmounted(() => {
       :font-size="fontSize"
       :user-mode="userMode"
       :is-workspace-open="!!originalUrl"
+      :tutorial-hint="!tutorialOpen && !tutorialHintSeen"
       @model-change="handleModelSelectChange"
       @preload="handlePreload"
       @clear-cache="clearAllCache"
@@ -354,6 +389,7 @@ onUnmounted(() => {
       @open-info="showInfoModal = true"
       @open-showcase="showBenchmarkPage = true"
       @open-settings="showSettingsModal = true"
+      @open-tutorial="openTutorial"
       @update:user-mode="userMode = $event"
     />
 
@@ -361,9 +397,11 @@ onUnmounted(() => {
       <UploadHero
         v-if="!originalUrl"
         :input-ref="setFileInput"
+        :sample-src="sampleSrc"
         @browse="fileInput.click()"
         @drop="onDrop"
         @select="onFileSelect"
+        @load-sample="loadSampleImage"
       />
 
       <ProcessingOverlay
@@ -515,6 +553,18 @@ onUnmounted(() => {
       :font-size="fontSize"
       @back="showBenchmarkPage = false"
       @cycle-font-size="cycleFontSize"
+    />
+
+    <TutorialOverlay
+      :show="tutorialOpen"
+      :step="currentStep"
+      :index="stepIndex"
+      :total="visibleSteps.length"
+      :is-last="isLastStep"
+      @close="closeTutorial"
+      @next="nextStep"
+      @prev="prevStep"
+      @goto="goToStep"
     />
   </div>
 </template>

@@ -20,6 +20,7 @@ import { appVersion } from '../constants.js'
 import { useVersionCheck } from '../composables/useVersionCheck.js'
 import FontSizeButton from './FontSizeButton.vue'
 import ModelStatusBar from './ModelStatusBar.vue'
+import TutorialButton from './TutorialButton.vue'
 import UpdatePrompt from './UpdatePrompt.vue'
 
 const {
@@ -59,7 +60,9 @@ defineProps({
    * a workspace open, so they are disabled on the upload page and re-enabled the
    * moment there is a cutout to tune.
    */
-  isWorkspaceOpen: { type: Boolean, default: false }
+  isWorkspaceOpen: { type: Boolean, default: false },
+  /** Plays the one-time pulse on the Tutorial button until the tour is opened. */
+  tutorialHint: { type: Boolean, default: false }
 })
 
 defineEmits([
@@ -71,6 +74,7 @@ defineEmits([
   'open-info',
   'open-showcase',
   'open-settings',
+  'open-tutorial',
   'update:userMode'
 ])
 </script>
@@ -85,6 +89,7 @@ defineEmits([
         <span class="brand-name">Pure<span>Cut</span></span>
         <button
           :class="['version-badge', { 'update-ready': hasNewVersion }]"
+          data-tutorial-id="version"
           @click="hasNewVersion ? openPrompt() : $emit('open-info')"
           :title="hasNewVersion ? `Update available: v${newVersionNumber} (${newVersionHash.slice(0, 7)}) - Click to update` : 'Version, Changelog & Roadmap'"
         >
@@ -93,11 +98,17 @@ defineEmits([
         </button>
         <button 
           class="btn-benchmark-nav" 
+          data-tutorial-id="showcase"
           @click="$emit('open-showcase')" 
           title="Inspect Model Benchmark & Cutout Comparison for Test Image"
         >
           <Sparkles :size="11" /> Model Showcase
         </button>
+        <TutorialButton
+          :hint="tutorialHint"
+          :label="isWorkspaceOpen ? 'Tutorial 2 - Process' : 'Tutorial 1 - Front'"
+          @open="$emit('open-tutorial')"
+        />
       </div>
     </div>
 
@@ -127,8 +138,10 @@ defineEmits([
         <RotateCcw :size="11" />
       </button>
 
-      <div class="mode-toggle-group">
-        <FontSizeButton :font-size="fontSize" @cycle="$emit('cycle-font-size')" />
+      <div class="mode-toggle-group" data-tutorial-id="mode">
+        <!-- The fallthrough `data-tutorial-id` lands on FontSizeButton's root button,
+             so the tour can spotlight just the font control inside the group. -->
+        <FontSizeButton :font-size="fontSize" data-tutorial-id="font-size" @cycle="$emit('cycle-font-size')" />
         <button
           class="btn-settings"
           @click="$emit('open-settings')"

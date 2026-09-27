@@ -27,7 +27,7 @@
  * runs load the model from cache in seconds instead of re-downloading.
  */
 import { Harness, report } from './lib/harness.mjs'
-import { checkFontScale, checkLanding } from './checks/landing.mjs'
+import { checkFontScale, checkLanding, checkTutorial } from './checks/landing.mjs'
 import { checkModals } from './checks/modals.mjs'
 import { checkStudio } from './checks/studio.mjs'
 
@@ -39,6 +39,9 @@ async function main() {
 
   await checkLanding(h)
   await checkFontScale(h)
+  // The guided tour runs on the clean landing page (before any image loads), so
+  // it can walk the landing steps without triggering the sample inference.
+  await checkTutorial(h)
   await checkModals(h)
   // checkStudio owns the upload + inference step, and therefore also drives the
   // stage viewport checks: `.tool-btn` and `.bg-btn` only exist inside the

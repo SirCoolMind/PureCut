@@ -51,9 +51,9 @@ that silently stopped matching.
 | `src/aiEngine.js` | Transformers.js wrapper. Model loading, device selection (WebGPU vs WASM), and the WebGPU→WASM fallback. |
 | `src/detectionEngine.js` | Pure pixel analysis: connected-component subject detection, magic-wand flood fill, mask contour extraction. No Vue, no DOM. |
 | `src/constants.js` | `appVersion`, `modelOptions`, `changelog`, `roadmap`. |
-| `src/components/*.vue` | The view layer, one concern per file: `Navbar`, `ModelStatusBar`, `UploadHero`, `ProcessingOverlay`, `StageHeader`, `CanvasViewport`, `StageFooter`, `TuningSidebar`, `SubjectsDrawer`, `ZoomToolbar`, `ModelChangePrompt`, `ReplaceImagePrompt`, plus the three lazy-loaded modals (Info / Settings / Showcase) and their sub-components: `ShowcaseSliderStage`, `ShowcaseDiagnosis`, `ShowcaseGallery`, `InfoChangelogTab`, `InfoRoadmapTab`, `InfoAboutTab`, `InfoStorageTab`. Dumb props + emits; all state stays in `App.vue`. |
-| `src/composables/*.ts` | `setup()`-scope state and behaviour, one concern per composable. Dependencies arrive as refs/callbacks rather than imports, so each module's signature is its whole contract: `useDisplayScale`, `useWorkspaceUi`, `useZoomPan`, `useTelemetry`, `useUndoRedo`, `useImageInput`, `useOutlineOverlay`, `useSubjects`, `useBrush`, `useSelectionOverlay`, `useSelectionTools`, `useCompositor`, `useModelCache`, `useKeyboardShortcuts`, `useProcessing`. |
-| `src/core/*.ts` | Framework-free modules: no Vue, no DOM side effects. Must be unit-testable in isolation. Currently `storageKeys.ts`, `canvasStore.ts`, `format.ts`, `geometry.ts`, `maskOps.ts`. |
+| `src/components/*.vue` | The view layer, one concern per file: `Navbar`, `ModelStatusBar`, `UploadHero`, `ProcessingOverlay`, `StageHeader`, `CanvasViewport`, `StageFooter`, `TuningSidebar`, `SubjectsDrawer`, `ZoomToolbar`, `ModelChangePrompt`, `ReplaceImagePrompt`, plus the three lazy-loaded modals (Info / Settings / Showcase) and their sub-components: `ShowcaseSliderStage`, `ShowcaseDiagnosis`, `ShowcaseGallery`, `InfoChangelogTab`, `InfoRoadmapTab`, `InfoAboutTab`, `InfoStorageTab`, plus the tour pair `TutorialButton` / `TutorialOverlay` and `FontSizeButton`. Dumb props + emits; all state stays in `App.vue`. |
+| `src/composables/*.ts` | `setup()`-scope state and behaviour, one concern per composable. Dependencies arrive as refs/callbacks rather than imports, so each module's signature is its whole contract: `useDisplayScale`, `useWorkspaceUi`, `useZoomPan`, `useTelemetry`, `useUndoRedo`, `useImageInput`, `useOutlineOverlay`, `useSubjects`, `useBrush`, `useSelectionOverlay`, `useSelectionTools`, `useCompositor`, `useModelCache`, `useKeyboardShortcuts`, `useProcessing`, `useTutorial`. |
+| `src/core/*.ts` | Framework-free modules: no Vue, no DOM side effects. Must be unit-testable in isolation. Currently `storageKeys.ts`, `canvasStore.ts`, `format.ts`, `geometry.ts`, `maskOps.ts`, `tutorial.ts`. |
 | `scripts/context-report.mjs` | The size budget tool: per-file lines/tokens, plus a per-block breakdown for oversized `.vue` files. |
 | `scripts/css-parity.mjs` | Normalises the CSS of a build into a sorted set of `selector | declaration` lines and diffs two snapshots. The only guard against a rule that silently stopped matching. |
 
@@ -87,6 +87,7 @@ are presentational and talk back through emits only.
 | Zoom controls | `components/ZoomToolbar.vue` |
 | Per-tool footer controls + export actions | `components/StageFooter.vue` |
 | Presets, tuning sliders, engine selects, telemetry card | `components/TuningSidebar.vue` |
+| Guided-tour trigger + overlay, sample-image quick try | `components/TutorialButton.vue`, `components/TutorialOverlay.vue`, `composables/useTutorial.ts`, `core/tutorial.ts` |
 | Subject drawer | `components/SubjectsDrawer.vue` |
 | "Switch model?" / "Replace image?" prompts | `components/ModelChangePrompt.vue`, `components/ReplaceImagePrompt.vue` |
 | Model loading, device selection + fallback | `aiEngine.js` |
@@ -305,6 +306,56 @@ Things that are easy to get wrong here:
   `maskInfo.channels`. **Verify a cutout by its alpha coverage, not by eye** — the check is
   `opaque% ≈ mask coverage%`; a mismatch means this bug. The samples are the regression guard.
 
+## Onboarding: the sample image and the guided tour
+
+Two QoL features share one idea — a first-time user should reach a real cutout
+without hunting for a photo or reading anything.
+
+**`public/Example1.jpg`** (3024×4032, ~949 KB) is the bundled demo. `App.vue`
+resolves it as `${import.meta.env.BASE_URL}Example1.jpg` — the leading base is
+load-bearing, because a bare `/Example1.jpg` breaks under the GitHub Pages
+sub-path the same way a bare `/` asset would. `loadSampleImage()` fetches it,
+wraps the blob in a `File`, and hands it to `confirmAndProcessImage()` so it takes
+the **normal upload path** (including the replace-image prompt if a cutout is
+already open). `UploadHero` renders the quick-try card only when `sampleSrc` is
+non-empty, so the hero stays a plain dropzone if the prop is ever dropped.
+
+**The tour** is `core/tutorial.ts` (step data + three pure helpers) →
+`composables/useTutorial.ts` (state) → `TutorialOverlay.vue` (render) with
+`TutorialButton.vue` as the trigger. Four things about it are easy to get wrong:
+
+- **`stepIndex` is stage-LOCAL, not an index into the full step list.** The tour
+  has a `landing` half (7 steps on the upload page) and a `studio` half (4 steps
+  once an image is loaded). `visibleSteps` filters by stage and `currentStep` is
+  `visibleSteps[stepIndex]`, so entering the studio simply restarts at 0. An
+  earlier version jumped with `firstIndexOfStage('studio')` (a GLOBAL index) into a
+  stage-local array and landed on the wrong step — that helper is gone, and this
+  is why.
+- **The stage gates on `!isProcessing`, not just `originalUrl`.** Loading the
+  sample flips `originalUrl` immediately but the app shows `ProcessingOverlay`
+  (not the stage) until inference finishes, so the studio targets do not exist and
+  every studio step would dock. `stage` is `originalUrl && !isProcessing ?
+  'studio' : 'landing'`, and the `watch(stage, …)` restart is what actually carries
+  the tour from its last landing step into the studio.
+- **Targets are found by `[data-tutorial-id="…"]`, and a missing target DOCKS the
+  callout** (a centered bubble, no spotlight) rather than pointing at the wrong
+  element. Anchors live on `Navbar` (`version`, `showcase`, `mode`), `FontSizeButton`
+  (`font-size`, via attribute fallthrough), `ModelStatusBar` (`model`, `cache`),
+  `UploadHero` (`dropzone`), `StageHeader` (`tools`, `export`) and `TuningSidebar`
+  (`tuning`). The cache step points at `.cache-status-pill`, **not** the Preload
+  button, because Preload only renders when the model is not already cached.
+- **The overlay re-measures every animation frame** (`requestAnimationFrame`,
+  live only while shown). CSS `zoom` — the font-size control — fires NEITHER
+  `ResizeObserver` NOR `window.resize` (see constraint 4 in the memory notes), so
+  a rAF loop is the only way to keep the spotlight glued to its element through
+  that transition. The loop writes a ref only when a measured value actually
+  changed. The spotlight itself is an **SVG mask** (white rect with a black rounded
+  rect punched out), which keeps the real element visible with no DOM cloning.
+
+The tour is visual only — it never drives the app, so no step can put the UI into
+a state the user did not ask for. `nextStep()` on the last landing step fires the
+sample load and then *waits*; a second click while `isProcessing` is a no-op.
+
 ## Non-obvious constraints — read before editing
 
 1. **Canvas objects are deliberately NOT reactive.** `maskCanvas`, `maskCtx`,
@@ -316,7 +367,8 @@ Things that are easy to get wrong here:
 2. **The `localStorage` key strings live in `core/storageKeys.ts`.** They used to
    be magic strings repeated in four files; that is fixed, so **import
    `STORAGE_KEYS` rather than typing a literal**: `purecut_hf_token`,
-   `purecut_font_size`, `purecut_cached_<modelId>`, `purecut_prompt_model_change`.
+   `purecut_font_size`, `purecut_cached_<modelId>`, `purecut_prompt_model_change`,
+   `purecut_tta_flip_fusion`, `purecut_tutorial_seen`.
    The one copy that must stay duplicated is in `index.html`, which runs before
    any module loads and so cannot import — do not "fix" it. Note the reads and
    writes are still split across `App.vue`, `SettingsModal.vue`, `aiEngine.js`

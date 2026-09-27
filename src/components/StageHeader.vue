@@ -71,7 +71,7 @@ defineEmits(['toggle-subjects', 'update:activeTool', 'update:previewBg', 'reset'
       </div>
 
       <!-- Export actions: New / Copy / Download PNG -->
-      <div class="header-actions">
+      <div class="header-actions" data-tutorial-id="export">
         <button class="btn-secondary" @click="$emit('reset')" title="Start over with another photo">
           <RotateCcw :size="14" /> New
         </button>
@@ -96,7 +96,7 @@ defineEmits(['toggle-subjects', 'update:activeTool', 'update:previewBg', 'reset'
     <!-- Row 2: tool switcher on the left, backdrop switcher on the right -->
     <div class="stage-header-row controls-row">
       <!-- Tool Switcher: Compare Slider vs Magic Brush vs Select vs Pan -->
-      <div class="tool-switch-bar">
+      <div class="tool-switch-bar" data-tutorial-id="tools">
         <button
           :class="['tool-btn', { active: activeTool === 'slider' }]"
           @click="$emit('update:activeTool', 'slider')"

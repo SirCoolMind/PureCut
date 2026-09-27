@@ -56,6 +56,22 @@ export async function checkStudio(h) {
     check('stage footer rendered', (await page.locator('.stage-footer').count()) > 0)
     await checkVisible('.zoom-floating-toolbar', 'zoom toolbar rendered')
 
+    // Tutorial 2 is independent from the landing walkthrough and becomes the
+    // context-specific navbar action only after the workspace has finished loading.
+    console.log('\nProcess tutorial')
+    check(
+      'existing-image trigger uses the requested Tutorial 2 name',
+      (await page.locator('.btn-tutorial').textContent()).trim() === 'Tutorial 2 - Process'
+    )
+    await page.locator('.btn-tutorial').click()
+    await page.locator('.tour-root').waitFor({ timeout: 3000 })
+    const tutorialCount = () => page.locator('.tour-count').textContent().then((text) => text.trim())
+    check('process tutorial opens independently on step 1', (await tutorialCount()) === 'Step 1 of 5')
+    await page.locator('.tour-skip').click()
+    await page.waitForTimeout(100)
+    check('process tutorial closes without resetting the workspace',
+      (await page.locator('.tour-root').count()) === 0 && (await page.locator('.studio-workspace').count()) === 1)
+
     await checkToolSwitching(h)
     await checkBackdrops(h)
 

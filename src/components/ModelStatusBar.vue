@@ -52,7 +52,7 @@ function handleModelChange(event) {
 
 <template>
   <div class="model-status-bar">
-    <div class="model-picker-wrapper">
+    <div class="model-picker-wrapper" data-tutorial-id="model">
       <select 
         class="model-picker-select" 
         :value="selectedModel"
@@ -85,7 +85,7 @@ function handleModelChange(event) {
     </button>
 
     <!-- Cache storage size indicator & clear cache trigger -->
-    <div class="cache-status-pill" :title="`Total AI model storage used: ${formattedCacheUsage}`">
+    <div class="cache-status-pill" data-tutorial-id="cache" :title="`Total AI model storage used: ${formattedCacheUsage}`">
       <HardDrive :size="11" />
       <span>{{ formattedCacheUsage }}</span>
       <button

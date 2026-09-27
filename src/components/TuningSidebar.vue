@@ -50,7 +50,7 @@ function handleModelChange(event) {
 </script>
 
 <template>
-  <aside class="sidebar-column">
+  <aside class="sidebar-column" data-tutorial-id="tuning">
     <!-- Tuning Header -->
     <div class="sidebar-header">
       <div class="sidebar-title">

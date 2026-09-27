@@ -27,10 +27,16 @@ import { ShieldCheck, UploadCloud } from 'lucide-vue-next'
 
 defineProps({
   /** Function ref that hands the file input element back to `useImageInput`. */
-  inputRef: { type: Function, required: true }
+  inputRef: { type: Function, required: true },
+  /**
+   * URL of the bundled demo photo. Shown as a quick-try card when set; leave it
+   * empty and the hero stays a plain dropzone. Resolved by App.vue against Vite's
+   * BASE_URL so it works from a sub-path deploy (GitHub Pages) too.
+   */
+  sampleSrc: { type: String, default: '' }
 })
 
-defineEmits(['browse', 'drop', 'select'])
+defineEmits(['browse', 'drop', 'select', 'load-sample'])
 </script>
 
 <template>
@@ -51,6 +57,7 @@ defineEmits(['browse', 'drop', 'select'])
     <!-- Dropzone Card -->
     <div
       class="dropzone-card"
+      data-tutorial-id="dropzone"
       @dragover.prevent
       @drop.prevent="$emit('drop', $event)"
       @click="$emit('browse')"
@@ -79,6 +86,18 @@ defineEmits(['browse', 'drop', 'select'])
       <div class="paste-hint">
         or press <kbd>Ctrl</kbd> + <kbd>V</kbd> anywhere to paste from clipboard
       </div>
+    </div>
+
+    <!-- Quick try: runs the bundled sample through the full pipeline as-is -->
+    <div v-if="sampleSrc" class="sample-try">
+      <button class="sample-try-btn" type="button" @click="$emit('load-sample')">
+        <img class="sample-thumb" :src="sampleSrc" alt="" aria-hidden="true" />
+        <span class="sample-try-text">
+          <span class="sample-try-title">Try the sample photo</span>
+          <span class="sample-try-sub">One click to run a real cutout</span>
+        </span>
+        <span class="sample-try-go">Run</span>
+      </button>
     </div>
   </section>
 </template>
@@ -193,6 +212,74 @@ kbd {
 
 .sr-only { display: none; }
 
+/* Quick-try sample card, sitting under the dropzone. */
+.sample-try {
+  margin-top: 14px;
+  width: 100%;
+}
+
+.sample-try-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px 8px 8px;
+  background: rgba(30, 41, 59, 0.45);
+  border: 1px solid rgba(129, 140, 248, 0.28);
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+}
+
+.sample-try-btn:hover {
+  border-color: #818cf8;
+  background: rgba(30, 41, 59, 0.7);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.22);
+}
+
+.sample-thumb {
+  width: 54px;
+  height: 54px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #0f1729;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sample-try-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sample-try-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.sample-try-sub {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+.sample-try-go {
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 8px;
+  box-shadow: 0 3px 12px rgba(99, 102, 241, 0.35);
+}
+
 /* Also lives in app.css for the stage footer's download link. */
 .btn-cta {
   display: inline-flex;
@@ -214,5 +301,29 @@ kbd {
 .btn-cta:hover {
   opacity: 0.95;
   transform: translateY(-1px);
+}
+
+@media (max-width: 767px) {
+  .hero-title {
+    font-size: 29px;
+  }
+
+  .dropzone-card {
+    padding: 26px 16px;
+  }
+
+  .drop-icon-wrapper {
+    width: 48px;
+    height: 48px;
+  }
+
+  .sample-thumb {
+    width: 46px;
+    height: 46px;
+  }
+
+  .sample-try-go {
+    padding-inline: 12px;
+  }
 }
 </style>

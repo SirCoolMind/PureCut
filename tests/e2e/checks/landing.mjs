@@ -67,3 +67,60 @@ export async function checkFontScale(h) {
   const storedFont = await page.evaluate(() => localStorage.getItem('purecut_font_size'))
   check('font size persisted to localStorage', !!storedFont, 'nothing stored')
 }
+
+/**
+ * The guided tour, exercised on the clean landing page (no image loaded, so the
+ * sample never runs). The tour is visual-only, so this asserts the separately
+ * named front-page tutorial opens, its landing steps advance, every target anchor
+ * is present, and Skip closes it without changing the page.
+ */
+export async function checkTutorial(h) {
+  const { page, check, checkVisible, shoot } = h
+  console.log('\nGuided tour')
+
+  await checkVisible('.btn-tutorial', 'Tutorial 1 button rendered in navbar')
+  check(
+    'front-page trigger uses the requested Tutorial 1 name',
+    (await page.locator('.btn-tutorial').textContent()).trim() === 'Tutorial 1 - Front'
+  )
+
+  // Every landing anchor the tour points at must exist, or its step silently docks.
+  const anchors = ['model', 'cache', 'font-size', 'version', 'showcase', 'dropzone']
+  for (const id of anchors) {
+    check(
+      `tutorial anchor present: ${id}`,
+      (await page.locator(`[data-tutorial-id="${id}"]`).count()) >= 1,
+      `[data-tutorial-id="${id}"] not found in the landing DOM`
+    )
+  }
+
+  await page.locator('.btn-tutorial').click()
+  await page.waitForSelector('.tour-root', { timeout: 3000 })
+  // `textContent`, not `innerText`: the counter is uppercased by CSS
+  // `text-transform`, and innerText reports the rendered casing.
+  const count = () => page.locator('.tour-count').textContent().then((t) => t.trim())
+  check('front tutorial opens on step 1', (await count()) === 'Step 1 of 7', `got "${await count()}"`)
+  await shoot(page, '08-tutorial')
+
+  // Walk to the final front-page step by pressing Next six times.
+  for (let i = 0; i < 6; i++) {
+    await page.locator('.tour-primary').click()
+    await page.waitForTimeout(80)
+  }
+  check('reaches the final front-page step', (await count()) === 'Step 7 of 7', `got "${await count()}"`)
+  check(
+    'final front-page step reads Finish',
+    (await page.locator('.tour-primary').textContent()).trim() === 'Finish'
+  )
+
+  // Skip must dismiss without loading anything: the studio must still be absent.
+  await page.locator('.tour-skip').click()
+  await page.waitForTimeout(150)
+  check('tour closes on Skip', (await page.locator('.tour-root').count()) === 0)
+  check(
+    'Skip did not start processing',
+    (await page.locator('.hero-section').count()) === 1 &&
+      (await page.locator('.studio-workspace').count()) === 0,
+    'the workspace appeared after skipping the tour'
+  )
+}

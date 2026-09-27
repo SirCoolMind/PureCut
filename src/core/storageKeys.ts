@@ -5,6 +5,9 @@
  * and `aiEngine.js`, where a typo would silently produce a "reset" that showed no
  * error. Import from here instead of writing the literal.
  *
+ * `tutorialSeen` is written by `useTutorial` to retire the one-time pulse hint on
+ * the Tutorial button; the guide itself stays reachable on demand.
+ *
  * NOT covered by this module (deliberately):
  *   - `index.html` has an inline bootstrap script that reads
  *     `purecut_font_size` before any module loads, to avoid a flash of
@@ -23,7 +26,9 @@ export const STORAGE_KEYS = {
   /** Whether to confirm before re-running the model on a model switch: 'true' | 'false'. */
   promptModelChange: 'purecut_prompt_model_change',
   /** Whether two-pass TTA Flip Fusion is active: 'true' | 'false'. */
-  ttaFlipFusion: 'purecut_tta_flip_fusion'
+  ttaFlipFusion: 'purecut_tta_flip_fusion',
+  /** Whether the first-run Tutorial button hint has already been shown: 'true' | 'false'. */
+  tutorialSeen: 'purecut_tutorial_seen'
 } as const
 
 /**
