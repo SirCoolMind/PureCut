@@ -112,6 +112,7 @@ const currentFileBlob = ref(null)
 
 const {
   isProcessing,
+  processingStep,
   isPreloading,
   downloadProgress,
   fileName,
@@ -406,6 +407,7 @@ onUnmounted(() => {
 
       <ProcessingOverlay
         v-else-if="isProcessing"
+        :current-step="processingStep"
         :status-message="statusMessage"
         :download-progress="downloadProgress"
         :telemetry="telemetry"

@@ -104,6 +104,11 @@ export function useProcessing({
 }: ProcessingDeps) {
   /** True for the whole of processImage(); drives the processing overlay. */
   const isProcessing = ref(false)
+  /** Zero during the one-second introduction, then one of the four visible UI phases. */
+  const processingStep = ref(0)
+  let phaseOneStartedAt = 0
+  let phaseTwoStartedAt = 0
+  let phaseTwoTransition: Promise<void> | null = null
   /** True while preloading weights. */
   const isPreloading = ref(false)
   /** Progress of a weight download, shown in the overlay. */
@@ -120,6 +125,10 @@ export function useProcessing({
   // TTA Flip Fusion: enabled by default, changeable in Power User mode
   const ttaFlipFusion = ref(localStorage.getItem(STORAGE_KEYS.ttaFlipFusion) !== 'false')
 
+  function wait(milliseconds: number) {
+    return new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
+  }
+
   /** Transformers.js reports every model asset independently. Only the binary
    * graph is a meaningful weight-download progress bar; config/tokenizer files
    * can finish at 100% just before the graph begins at 0%. */
@@ -130,6 +139,17 @@ export function useProcessing({
 
   function handleModelProgress(progress: any) {
     if (progress?.message) statusMessage.value = progress.message
+
+    // Loading (and downloading) weights belongs to phase 1. Cached models can
+    // reach inference almost immediately, so keep phase 1 on screen long enough
+    // for the scissor carriage to complete its first transition.
+    if (progress?.status === 'inference' && processingStep.value === 1) {
+      const remainingPhaseOneTime = Math.max(0, 1200 - (performance.now() - phaseOneStartedAt))
+      phaseTwoTransition ??= wait(remainingPhaseOneTime).then(() => {
+        processingStep.value = 2
+        phaseTwoStartedAt = performance.now()
+      })
+    }
 
     if (isWeightAsset(progress) && (progress.progress !== undefined || progress.pct !== undefined)) {
       const raw = progress.pct !== undefined ? progress.pct : progress.progress
@@ -186,11 +206,19 @@ export function useProcessing({
     resultBlob.value = null
     undoHistory.value = []
     isProcessing.value = true
+    processingStep.value = 0
     downloadProgress.percent = 0
     downloadProgress.isDownloading = false
     statusMessage.value = currentModelCached.value
       ? 'Analyzing image with AI...'
       : `Preparing ${currentModelMeta.value.name}...`
+
+    // Keep the opening state visible long enough to establish that work began.
+    await wait(1000)
+    processingStep.value = 1
+    phaseOneStartedAt = performance.now()
+    phaseTwoStartedAt = 0
+    phaseTwoTransition = null
 
     const startHeap = (typeof window !== 'undefined' && window.performance && (window.performance as any).memory)
       ? (window.performance as any).memory.usedJSHeapSize
@@ -218,6 +246,7 @@ export function useProcessing({
     setOriginalCtx(originalCanvasEl.getContext('2d', { willReadFrequently: true }))
     originalCtx!.drawImage(img, 0, 0)
 
+    let completedSuccessfully = false
     try {
       let rawMaskBlob: Blob | null = null
 
@@ -232,6 +261,18 @@ export function useProcessing({
         { tta: ttaFlipFusion.value }
       )
       rawMaskBlob = result.maskBlob
+
+      // Do not interrupt the first or second timeline movement when a cached
+      // model returns before its visual stage has had time to settle.
+      if (!phaseTwoTransition && processingStep.value === 1) {
+        const remainingPhaseOneTime = Math.max(0, 1200 - (performance.now() - phaseOneStartedAt))
+        phaseTwoTransition = wait(remainingPhaseOneTime).then(() => {
+          processingStep.value = 2
+          phaseTwoStartedAt = performance.now()
+        })
+      }
+      await phaseTwoTransition
+      await wait(Math.max(0, 800 - (performance.now() - phaseTwoStartedAt)))
 
       cachedModels[selectedModel.value] = true
       localStorage.setItem(cachedModelKey(selectedModel.value), 'true')
@@ -279,7 +320,11 @@ export function useProcessing({
         selectedDevice.value = 'cpu'
       }
 
+      processingStep.value = 3
       recompositeCanvas()
+      // Refinement is lightweight, but keep its state visible instead of
+      // skipping straight from inference to the finished screen.
+      await wait(900)
 
       // Analyze and extract separate objects/subjects asynchronously
       setTimeout(() => {
@@ -288,13 +333,20 @@ export function useProcessing({
           showSubjectsDrawer.value = true // automatically open drawer if multiple subjects found
         }
       }, 50)
+      completedSuccessfully = true
 
     } catch (error: any) {
       console.error('Processing error:', error)
       alert(error.message || 'Failed to process image. Try selecting another model or device.')
     } finally {
+      if (completedSuccessfully) {
+        processingStep.value = 4
+        // Let people see the finished card rather than snapping straight to the studio.
+        await wait(1200)
+      }
       isProcessing.value = false
       downloadProgress.isDownloading = false
+      processingStep.value = 0
     }
   }
 
@@ -349,6 +401,7 @@ export function useProcessing({
 
   return {
     isProcessing,
+    processingStep,
     isPreloading,
     downloadProgress,
     fileName,
