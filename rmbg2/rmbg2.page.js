@@ -16,6 +16,15 @@ const confirmModal = $('confirmModal')
 let stream = null, files = [], checkpoints = [], currentRunningCheckpoint = null
 const picked = new Set()
 
+/* RAM-bypass state. `ramBlockMessage` holds the refusal a run just received, so
+   the banner can offer "continue anyway"; `ramRetry` is the action to re-attempt
+   once the user has accepted the risk, so the banner's button and the caution
+   modal do the same thing. `lastSystem` is the most recent resource sample, used
+   to quote the real free-memory figure in the modal. */
+let lastSystem = null
+let ramBlockMessage = ''
+let ramRetry = null
+
 /* ------------------------------- log ------------------------------- */
 let logPristine = true
 
@@ -134,6 +143,8 @@ function applyDisabled() {
   if ($('preloadAll')) $('preloadAll').disabled = !idle
   if ($('freeMemory')) $('freeMemory').disabled = !idle
   if ($('clearImages')) $('clearImages').disabled = !idle || files.length === 0
+  if ($('bypassRam')) $('bypassRam').disabled = !idle
+  if ($('constOpen')) $('constOpen').disabled = !idle
   $('run').textContent = picked.size > 1 ? `Run ${picked.size} images` : 'Run'
 }
 
@@ -162,8 +173,17 @@ function openStream(url, onDone, onFail) {
       if ($('resEngineMb')) $('resEngineMb').textContent = message.engineMb
     } else if (message.type === 'ready') {
       appendLog(`Runner ready: ${message.model} → ${message.file} on ${message.provider}`, 'info')
+    } else if (message.type === 'blocked') {
+      // Deferrable refusal: the run needs more memory than is free. Keep the
+      // message on hand so the banner can offer to proceed anyway.
+      appendLog(message.message, 'warn')
+      showConstBar(message.message)
+      stopStream()
+      if (onFail) onFail()
     } else if (message.type === 'error') {
       appendLog(message.message, 'err')
+      // Belt and braces: an older runner may still phrase a block as an error.
+      if (/blocked|not enough .*RAM|RAM is free/i.test(message.message)) showConstBar(message.message)
       stopStream()
       if (onFail) onFail()
     } else {
@@ -506,15 +526,120 @@ function renderResult(result) {
   resultsEl.appendChild(card)
 }
 
+/* --------------------- RAM-bypass (proceed with caution) ---------------------
+   The server refuses a model whose measured peak exceeds the memory available
+   (see the admission check in rmbg2-vite-plugin.mjs). The user asked to be able
+   to override that deliberately, so the refusal is now deferrable: a blocked run
+   surfaces a banner, and accepting the caution sends the same run again with
+   `bypass=1`. The warning is never silent - the banner stays up for the rest of
+   the session - and nothing is stored, so a fresh visit starts guarded again.
+   -------------------------------------------------------------------------- */
+
+function currentCheckpoint() {
+  return checkpoints.find((c) => c.file === $('checkpoint')?.value)
+}
+
+/**
+ * Show the caution banner. `retry`, when given, is the action the banner's button
+ * runs (re-attempt the blocked run). Without one - e.g. a finished bypass run that
+ * only needs flagging - the button is hidden rather than left dead.
+ */
+function showConstBar(message, retry = null) {
+  ramBlockMessage = message
+  const bar = $('constBar')
+  if (!bar) return
+  if ($('constMsg')) $('constMsg').textContent = message
+  const openBtn = $('constOpen')
+  if (openBtn) {
+    ramRetry = typeof retry === 'function' ? retry : null
+    openBtn.hidden = !ramRetry
+  }
+  bar.hidden = false
+}
+
+function clearConstBar() {
+  ramBlockMessage = ''
+  ramRetry = null
+  const bar = $('constBar')
+  if (bar) bar.hidden = true
+}
+
+function setBypassRam(on) {
+  const box = $('bypassRam')
+  if (box) box.checked = Boolean(on)
+}
+
+function bypassRamEnabled() {
+  return Boolean($('bypassRam')?.checked)
+}
+
+/**
+ * Ask before a bypass actually runs.
+ *
+ * Called both from the banner's "Continue anyway" and from the checkbox. The
+ * checkbox alone must not start a run that could exhaust the machine - it only
+ * unlocks the attempt; the dialog is the confirmation. The first call to
+ * `onConfirm` re-enables the checkbox for the user, the second (from the button
+ * in the modal) runs the job.
+ */
+function requestRamBypass(onConfirm) {
+  const modal = $('ramModal')
+  if (!modal) { onConfirm(); return }
+
+  const cp = currentCheckpoint()
+  const free = lastSystem?.ram?.physicalFreeMb
+  const need = cp?.minimumFreeRamMb
+  const parts = []
+  if (free != null) parts.push(`Free memory: ${free.toLocaleString()} MB`)
+  if (need != null) parts.push(`This model asks for ${need.toLocaleString()} MB`)
+  if (cp?.estimatedPeakRamMb != null) parts.push(`Measured peak: about ${cp.estimatedPeakRamMb.toLocaleString()} MB`)
+  if ($('ramStats')) $('ramStats').textContent = parts.join('  ·  ') || 'The lab cannot estimate what this run will need.'
+
+  let settled = false
+  const finish = () => {
+    if (settled) return
+    settled = true
+    $('confirmRamBypass')?.removeEventListener('click', accept)
+    $('cancelRamBypass')?.removeEventListener('click', cancel)
+    modal.removeEventListener('cancel', onCancel)
+    modal.close()
+  }
+  const accept = () => { finish(); setBypassRam(true); onConfirm() }
+  const cancel = () => { finish(); setBypassRam(false) }
+  // Esc closes a <dialog> without a click - treat that as a cancel.
+  const onCancel = () => { if (!settled) { settled = true; setBypassRam(false) } }
+
+  $('confirmRamBypass')?.addEventListener('click', accept)
+  $('cancelRamBypass')?.addEventListener('click', cancel)
+  modal.addEventListener('cancel', onCancel)
+  modal.showModal()
+}
+
+$('constOpen')?.addEventListener('click', () => {
+  if (running) return
+  const retry = ramRetry
+  if (retry) requestRamBypass(retry)
+})
+
+$('bypassRam')?.addEventListener('change', (event) => {
+  const box = event.target
+  if (!box.checked) { clearConstBar(); return }
+  // Do not let the checkbox alone arm a dangerous run: confirm it first, and
+  // untick again if the user backs out.
+  box.checked = false
+  requestRamBypass(() => setBypassRam(true))
+})
+
 let runCounter = 0
 const nextRunId = () => `run-${Date.now()}-${++runCounter}`
-function runCheckpoint(checkpointFile, { release = true, clearReport = true, appendReport = false } = {}) {
+function runCheckpoint(checkpointFile, { bypass = false, release = true, clearReport = true, appendReport = false } = {}) {
   return new Promise((resolve) => {
     const params = new URLSearchParams({
       runId: nextRunId(),
       checkpoint: checkpointFile,
       inputs: [...picked].join(','),
       release: release ? '1' : '0',
+      bypass: bypass ? '1' : '0',
       tta: $('tta')?.checked ? '1' : '0',
       clearReport: clearReport ? '1' : '0',
       appendReport: appendReport ? '1' : '0'
@@ -529,6 +654,9 @@ function runCheckpoint(checkpointFile, { release = true, clearReport = true, app
           'ok',
           true
         )
+        if (bypass) {
+          appendLog('Result produced with the RAM check bypassed — treat it as advisory.', 'warn')
+        }
         $('report').disabled = false
         for (const r of message.results) renderResult(r)
         stopStream()
@@ -539,25 +667,39 @@ function runCheckpoint(checkpointFile, { release = true, clearReport = true, app
   })
 }
 
-$('run').addEventListener('click', async () => {
-  const chosen = checkpoints.find((c) => c.file === $('checkpoint').value)
-  if (!chosen) return
+$('run').addEventListener('click', () => {
+  const chosen = currentCheckpoint()
+  // The ticked checkbox is the standing opt-in; an unticked one still offers the
+  // bypass reactively, via the banner, if the server refuses the run.
+  if (chosen) runSingle(chosen, bypassRamEnabled())
+})
+
+/** One checkpoint for the current selection. The bypass retry re-enters here. */
+async function runSingle(chosen, bypass) {
   resultsEl.textContent = ''
   resetLog()
   resetAllModelCards()
   $('report').disabled = true
-  $('outHint').textContent = 'Running…'
+  $('outHint').textContent = 'Running...'
+  clearConstBar()
   beginJob()
 
   currentRunningCheckpoint = chosen.file
   updateModelProgress(chosen.file, 0, picked.size, 'Running inference...')
 
-  if (chosen) appendLog(`Running ${chosen.label} (${chosen.approxSize}) on ${picked.size} image(s)…`, 'run')
-  const ok = await runCheckpoint(chosen.file, { release: true, clearReport: true, appendReport: false })
+  appendLog(`Running ${chosen.label} (${chosen.approxSize}) on ${picked.size} image(s)...`, 'run')
+  const ok = await runCheckpoint(chosen.file, { bypass, release: true, clearReport: true, appendReport: false })
 
   if (ok) {
     setModelCompleted(chosen.file, picked.size)
     appendLog(`Inference is completed for ${chosen.label}.`, 'ok', true)
+    if (bypass) showConstBar(`This result was produced with the RAM check bypassed (${chosen.label}). Treat it as advisory.`)
+  } else if (!bypass && ramBlockMessage) {
+    // Refused for memory, not for a real error - arm the caution path and keep
+    // the banner up instead of ending the job as a failure.
+    showConstBar(ramBlockMessage, () => runSingle(chosen, true))
+    updateModelStatusText(chosen.file, 'Blocked - RAM')
+    appendLog(`Inference blocked for ${chosen.label}: not enough free memory.`, 'warn')
   } else {
     updateModelStatusText(chosen.file, 'Failed ✗')
     appendLog(`Inference failed for ${chosen.label}.`, 'err')
@@ -567,7 +709,7 @@ $('run').addEventListener('click', async () => {
   endJob()
   $('outHint').textContent = 'Finished — scroll down to compare.'
   await loadFiles()
-})
+}
 
 /* ---------- Confirmation modal for Run All Model ---------- */
 $('runAll').addEventListener('click', () => {
@@ -600,6 +742,9 @@ async function executeRunAll() {
   )
   appendLog('Sequential CPU execution: inference and model initialization may take some time.', 'warn')
 
+  const bypass = bypassRamEnabled()
+  if (bypass) appendLog('RAM check bypassed for this batch — a checkpoint may fail if memory runs out.', 'warn')
+
   for (const [index, cp] of checkpoints.entries()) {
     const overall = $('overallProgress')
     if (overall) overall.textContent = `Running model ${index + 1} of ${checkpoints.length}…`
@@ -610,6 +755,7 @@ async function executeRunAll() {
     appendLog(`[${index + 1}/${checkpoints.length}] Active model: ${cp.label} (${cp.approxSize})`, 'run')
 
     const ok = await runCheckpoint(cp.file, {
+      bypass,
       release: true,
       clearReport: index === 0,
       appendReport: index > 0
@@ -617,7 +763,7 @@ async function executeRunAll() {
 
     if (!ok) {
       appendLog(`  ${cp.label} did not finish; continuing with remaining models.`, 'warn')
-      updateModelStatusText(cp.file, 'Failed ✗')
+      updateModelStatusText(cp.file, bypass ? 'Failed ✗' : 'Blocked - RAM')
     } else {
       setModelCompleted(cp.file, picked.size)
     }
@@ -739,6 +885,7 @@ async function fetchSystemInfo() {
     const res = await fetch('/rmbg2/system')
     if (!res.ok) return
     const sys = await res.json()
+    lastSystem = sys
     if ($('resCpuPct')) $('resCpuPct').textContent = `${sys.cpu.loadPercent}%`
     if ($('resCpuFill')) $('resCpuFill').style.width = `${Math.min(100, Math.max(0, sys.cpu.loadPercent))}%`
     if ($('resRamVal')) {

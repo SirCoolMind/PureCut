@@ -588,6 +588,10 @@ async function handleRun(runner, response, url) {
   // "Close the model once every image is done" - used by Run All Model so only one
   // checkpoint is ever resident.
   const release = url.searchParams.get('release') === '1'
+  // Explicit, per-run override of the memory admission check. It is a query flag
+  // rather than a setting so that a fresh page load is guarded again, and the page
+  // only sends it after the user has accepted the caution dialog.
+  const bypass = url.searchParams.get('bypass') === '1'
   const selectedCheckpoint = CHECKPOINTS.find((item) => item.file === checkpoint)
   if (!selectedCheckpoint) {
     send({ type: 'error', message: 'Unknown checkpoint.' })
@@ -596,9 +600,9 @@ async function handleRun(runner, response, url) {
   }
 
   const freeRamMb = Math.round(os.freemem() / 1048576)
-  if (freeRamMb < selectedCheckpoint.minimumFreeRamMb) {
+  if (!bypass && freeRamMb < selectedCheckpoint.minimumFreeRamMb) {
     send({
-      type: 'error',
+      type: 'blocked',
       message:
         `${selectedCheckpoint.label} is blocked: ${freeRamMb.toLocaleString()} MB RAM is free, ` +
         `but this model needs at least ${selectedCheckpoint.minimumFreeRamMb.toLocaleString()} MB free ` +
@@ -607,6 +611,17 @@ async function handleRun(runner, response, url) {
     })
     off()
     return response.end()
+  }
+  if (bypass && freeRamMb < selectedCheckpoint.minimumFreeRamMb) {
+    // Proceeding at the user's request. Said plainly in the log so a run that
+    // later dies for memory is not mistaken for a mystery failure.
+    send({
+      type: 'log',
+      text:
+        `RAM check BYPASSED by request: ${freeRamMb.toLocaleString()} MB free, ` +
+        `${selectedCheckpoint.label} asks for ${selectedCheckpoint.minimumFreeRamMb.toLocaleString()} MB. ` +
+        'Proceeding with caution - the process or the machine may become unstable.'
+    })
   }
   // The page sends the NAMES it uploaded; the absolute path is built here, so a
   // request can never aim the runner at an arbitrary file on disk. Each name is

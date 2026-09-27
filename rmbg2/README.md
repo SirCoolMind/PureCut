@@ -135,6 +135,24 @@ not suitable for 4 GB or 8 GB machines; on a 16 GB machine, use q4f16 only after
 memory-heavy applications. The GUI releases each native session after a run, and **Run All Model**
 releases one checkpoint before loading the next, so multi-GB allocations do not remain idle.
 
+### Bypassing the check (proceed with caution)
+
+The refusal is a safety net, not a hard wall. **Bypass RAM limitation** in *Model & Execution*
+re-enables a model the check would refuse, for callers who have freed memory outside the lab's
+view or simply want to try anyway:
+
+- Ticking the box opens a caution dialog quoting the real figures (free memory, the model's
+  minimum, its measured peak). Accepting arms the bypass; a run then proceeds regardless.
+- When the box is unticked, a refused run is still recoverable: the page shows a caution banner
+  whose *Continue anyway* button reopens the same dialog and retries that exact run.
+- Confirming an override re-runs with `?bypass=1`. The banner stays up for the rest of the
+  session and the log records the override, so a memory-related death later is not a mystery.
+- Nothing is persisted: a fresh page load starts guarded again, and the checkbox is per-session.
+
+Bypassing does not make a too-large model fit. It only means the lab stops stopping you — a run
+that exceeds physical memory will still be killed by the OS, and can destabilise the machine.
+Close other applications first. The normal remedy for a block is to pick `q4f16`, or free RAM.
+
 Switching checkpoint reloads the session (minutes), so the page says so rather than appearing
 to hang.
 

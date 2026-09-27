@@ -81,11 +81,33 @@ code { background: #131c2b; padding: 1px 5px; border-radius: 4px; font-size: 0.9
   height: 80vh;
   height: 80dvh;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  /* topbar (auto) · constants banner (auto, collapses when hidden) · columns (1fr) */
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 11px;
   padding: 13px 15px;
   overflow: hidden;
 }
+
+/* A run that was admitted only by bypassing the RAM check gets a persistent
+   reminder that the result was produced under a condition the lab flags. */
+.const-bar {
+  display: flex; align-items: center; gap: 10px;
+  background: #2a1a0c; border: 1px solid #6b3a16; border-radius: 9px;
+  padding: 7px 12px;
+}
+.const-bar[hidden] { display: none; }
+.const-mark {
+  flex: 0 0 auto; width: 20px; height: 20px; border-radius: 99px;
+  background: #7c3d10; color: #ffd9b0; font-weight: 700; font-size: 13px;
+  display: grid; place-items: center;
+}
+.const-msg { margin: 0; flex: 1; min-width: 0; font-size: 12px; color: var(--warn); line-height: 1.4; }
+.const-msg strong { color: #ffd9b0; }
+.const-open {
+  flex: 0 0 auto; font-size: 11px; padding: 4px 9px; border-radius: 6px;
+  background: #3a2410; border: 1px solid #6b3a16; color: var(--warn);
+}
+.const-open:hover:not(:disabled) { background: #4a2f15; }
 
 .topbar { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .topbar h1 { margin: 0; font-size: 17px; letter-spacing: -0.01em; white-space: nowrap; }
@@ -327,6 +349,17 @@ button:hover:not(:disabled) { background: #172134; }
 .field-check label { display: flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
 .field-check input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 .field-check small { color: var(--muted); }
+
+/* The RAM-bypass opt-in is deliberately styled as the dangerous choice. */
+.field-danger {
+  border: 1px solid #5c2a14;
+  background: #1c1208;
+  border-radius: 7px;
+  padding: 6px 8px;
+}
+.field-danger label { color: var(--danger); }
+.field-danger input { accent-color: var(--danger); }
+.field-danger small { color: #c79a9a; }
 
 .actions { display: grid; grid-template-columns: 1.4fr 0.95fr 1.05fr; gap: 7px; margin-top: 2px; flex: 0 0 auto; }
 .actions .run {
@@ -676,6 +709,16 @@ button:hover:not(:disabled) { background: #172134; }
   font-size: 12.5px; cursor: pointer;
 }
 .btn-primary:hover { background: linear-gradient(180deg, #c9973a, #976e1a); }
+.btn-danger {
+  background: linear-gradient(180deg, #c2452f, #8f2f1f); border: 1px solid #a5371f;
+  color: #fde8e3; font-weight: 700; padding: 7px 16px; border-radius: 7px;
+  font-size: 12.5px; cursor: pointer;
+}
+.btn-danger:hover { background: linear-gradient(180deg, #d64f38, #a33622); }
+.dialog-warn {
+  margin: 0; font-size: 12px; font-weight: 600; color: var(--danger);
+  background: #2a1414; border: 1px solid #5c1818; border-radius: 6px; padding: 7px 12px;
+}
 
 /* ======================================================================
    OUTPUT — deliberately below the fold. Scroll down to compare.

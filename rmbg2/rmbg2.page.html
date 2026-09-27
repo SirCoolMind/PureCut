@@ -36,6 +36,12 @@
     </details>
   </div>
 
+  <div class="const-bar" id="constBar" hidden>
+    <span class="const-mark">!</span>
+    <p class="const-msg" id="constMsg"></p>
+    <button type="button" class="const-open" id="constOpen">Continue anyway</button>
+  </div>
+
   <div class="columns">
     <!-- ---------- LEFT: Images + Model & Hardware ---------- -->
     <section class="panel panel-left">
@@ -66,6 +72,13 @@
           <label for="tta">
             <input type="checkbox" id="tta">
             <span>Apply TTA Flip Fusion <small>(Optional: two inference passes; uses more time and RAM)</small></span>
+          </label>
+        </div>
+
+        <div class="field-check field-danger">
+          <label for="bypassRam">
+            <input type="checkbox" id="bypassRam">
+            <span>Bypass RAM limitation <small>Proceed with caution — the run may exhaust memory and crash the machine.</small></span>
           </label>
         </div>
 
@@ -135,7 +148,7 @@
   </div>
 </main>
 
-<!-- ======================= CONFIRMATION MODAL ======================= -->
+<!-- ======================= RUN-ALL CONFIRMATION MODAL ======================= -->
 <dialog id="confirmModal" class="confirm-dialog">
   <form method="dialog" class="dialog-box">
     <h3>Run All Models?</h3>
@@ -146,6 +159,24 @@
     <div class="dialog-actions">
       <button id="cancelRunAll" type="button" class="btn-secondary">Cancel</button>
       <button id="confirmRunAll" type="button" class="btn-primary">Yes, Run All</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ======================= RAM BYPASS CONFIRMATION MODAL ======================= -->
+<dialog id="ramModal" class="confirm-dialog">
+  <form method="dialog" class="dialog-box">
+    <h3>Bypass the RAM check?</h3>
+    <p>
+      You are about to run a model the lab's admission check would refuse. The checkpoint must be
+      loaded into native memory, and if there is not enough the process can be killed or the whole
+      machine can become unstable. Your unsaved work in other applications is at risk.
+    </p>
+    <div class="dialog-stats" id="ramStats"></div>
+    <p class="dialog-warn">Proceed with caution. This is entirely at your own risk.</p>
+    <div class="dialog-actions">
+      <button id="cancelRamBypass" type="button" class="btn-secondary">Cancel</button>
+      <button id="confirmRamBypass" type="button" class="btn-danger">Proceed with Caution</button>
     </div>
   </form>
 </dialog>
