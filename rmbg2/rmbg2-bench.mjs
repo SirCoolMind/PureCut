@@ -56,7 +56,8 @@ async function main() {
   const supported = (ort.listSupportedBackends?.() || []).map((b) => b.name)
   const checkpointPath = path.join(
     ROOT,
-    'rmbg2-lab',
+    'rmbg2',
+    'lab',
     '.cache',
     'briaai__RMBG-2.0',
     path.basename(opts.checkpoint)
@@ -67,7 +68,7 @@ async function main() {
   process.stdout.write(`backends   : ${supported.join(', ')}\n`)
   process.stdout.write(`expected   : mean alpha ~= ${EXPECTED_MEAN_ALPHA.toFixed(4)} on the anchor\n\n`)
 
-  const pre = await preprocess(sharp, path.join(ROOT, 'rmbg2-lab', 'inputs', opts.image))
+  const pre = await preprocess(sharp, path.join(ROOT, 'rmbg2', 'lab', 'inputs', opts.image))
   const planes = INPUT_SIZE * INPUT_SIZE
 
   const rows = []

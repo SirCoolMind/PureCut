@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import { rmbg2Lab } from './scripts/rmbg2-vite-plugin.mjs'
+import { rmbg2Lab } from './rmbg2/rmbg2-vite-plugin.mjs'
 import { resolveVersionInfo } from './scripts/version.mjs'
 
 const versionInfo = resolveVersionInfo()

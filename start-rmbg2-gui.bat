@@ -101,12 +101,12 @@ REM    Not failure handling - if the folder is empty the runner
 REM    creates four synthetic samples on its own, so the FIRST run
 REM    always produces a visible result before you add your own.
 REM ---------------------------------------------------------------
-if not exist "rmbg2-lab\inputs\*" (
-    echo [INFO] rmbg2-lab\inputs is empty.
+if not exist "rmbg2\lab\inputs\*" (
+    echo [INFO] rmbg2\lab\inputs is empty.
     echo        Four synthetic samples will be generated so you can see
     echo        the model work. Drop your own images in afterwards.
     echo.
-    call :OpenFolder "rmbg2-lab\inputs"
+    call :OpenFolder "rmbg2\lab\inputs"
 )
 
 REM ---------------------------------------------------------------
@@ -123,7 +123,7 @@ echo   the checkpoint and the execution provider.
 echo.
 echo   Before the first run on a fresh checkpoint, expect a download:
 echo     q4f16  223 MB     fp16  490 MB     fp32  977 MB
-echo   Once downloaded the weights are cached in rmbg2-lab\.cache\ and
+echo   Once downloaded the weights are cached in rmbg2\lab\.cache\ and
 echo   reused, so later runs start straight away. To get that download
 echo   out of the way now, use:  npm run rmbg2:preload
 echo.

@@ -4,7 +4,7 @@ A Node-side CPU tester for `briaai/RMBG-2.0`, which **cannot run in any browser
 tab** — see *Why* below.
 
 ```
-npm run rmbg2              # process every image in rmbg2-lab/inputs/
+npm run rmbg2              # process every image in rmbg2/lab/inputs/
 npm run rmbg2:help         # all flags
 npm run rmbg2 -- photo.jpg # one image (substring match)
 npm run rmbg2 -- --list    # list inputs, download nothing
@@ -16,7 +16,7 @@ npm run rmbg2:reruntest    # a reconnecting stream must not re-run the job
 npm run rmbg2:releasetest  # Run All Model closes each model before the next loads
 ```
 
-Everything is local: `rmbg2-lab/` is gitignored, and the token only ever goes to
+Everything is local: `rmbg2/lab/` is gitignored, and the token only ever goes to
 `huggingface.co`.
 
 ## Setup
@@ -28,14 +28,14 @@ native lab deps, the Hugging Face token):
 
 | Launcher | What it does |
 | --- | --- |
-| `start-rmbg2.bat` | Opens the **GUI** at `http://localhost:5173/rmbg2`. Drop in images, tick which to run, pick checkpoint + provider. |
+| `start-rmbg2-gui.bat` | Opens the **GUI** at `http://localhost:5173/rmbg2`. Drop in images, tick which to run, pick checkpoint + provider. |
 | `start-rmbg2-cmd.bat` | **Terminal, two-step.** Shows you the input folder and opens it, waits for Enter, then prints the image count and asks you to confirm before running. |
 
 Both print what to do when a run fails.
 
 ### Pre-downloading weights
 
-The weights are cached in `rmbg2-lab/.cache/` and reused, so you only pay the download once.
+The weights are cached in `rmbg2/lab/.cache/` and reused, so you only pay the download once.
 To get it out of the way deliberately (rather than stalling your first run):
 
 ```
@@ -68,7 +68,7 @@ than an interrupted download).
    npm install -D sharp
    ```
 
-5. **Run it.** An empty `rmbg2-lab/inputs/` gets four synthetic samples, so the
+5. **Run it.** An empty `rmbg2/lab/inputs/` gets four synthetic samples, so the
    first run works before you've added anything.
 
 > The launcher and the manual steps are equivalent — the launcher only automates
@@ -109,9 +109,9 @@ model.
 On the sample photo all three checkpoints agreed (17.3% coverage, strong separation); the
 quantised q4f16 was the fastest.
 
-**It runs only what you upload, and keeps nothing.** Uploads go to `rmbg2-lab/uploads/`, which the
+**It runs only what you upload, and keeps nothing.** Uploads go to `rmbg2/lab/uploads/`, which the
 page empties on load, so each visit starts clean and nothing accumulates. That folder is
-deliberately separate from `rmbg2-lab/inputs/` (the CLI's working folder): the GUI never lists or
+deliberately separate from `rmbg2/lab/inputs/` (the CLI's working folder): the GUI never lists or
 clears that one, so a batch you staged for the terminal is safe.
 
 It is dev-only on three axes: registered with `apply: 'serve'`, absent from `dist/`, and every
@@ -173,7 +173,7 @@ table as universal.
 ## What you get
 
 ```
-rmbg2-lab/
+rmbg2/lab/
   inputs/                     the CLI's working folder (the GUI does not touch it)
   uploads/                    images uploaded through the GUI (emptied on each page load)
   outputs/<name>-cutout.png   transparent cutout, full source resolution
@@ -241,19 +241,19 @@ prediction is sigmoided, then the mask is resized back to the source size.
 
 | File | Role |
 | --- | --- |
-| `scripts/rmbg2.mjs` | CLI: args, help, entry point |
-| `scripts/rmbg2.config.mjs` | paths, checkpoints, providers, preprocessing constants, token |
-| `scripts/rmbg2-image.mjs` | all `sharp` usage: inputs, preprocess, mask stats, previews |
-| `scripts/rmbg2-session.mjs` | the ONNX session + the batch loop |
-| `scripts/rmbg2-report.mjs` | the standalone HTML report |
-| `scripts/rmbg2-serve.mjs` | the `--serve` JSON protocol |
-| `scripts/rmbg2-bench.mjs` | provider benchmark + mask correctness check |
-| `scripts/rmbg2-apitest.mjs` | upload/delete/traversal checks (needs the dev server) |
-| `scripts/rmbg2-tokentest.mjs` | token-plumbing regression guard |
-| `scripts/rmbg2-reruntest.mjs` | proves a reconnecting stream cannot re-run a job |
-| `scripts/rmbg2-releasetest.mjs` | proves each model is closed between models |
-| `scripts/rmbg2-vite-plugin.mjs` | dev-only `/rmbg2` routes (page, list, upload, delete, providers, run, report) |
-| `scripts/rmbg2.page.html` | the lab page |
+| `rmbg2/rmbg2.mjs` | CLI: args, help, entry point |
+| `rmbg2/rmbg2.config.mjs` | paths, checkpoints, providers, preprocessing constants, token |
+| `rmbg2/rmbg2-image.mjs` | all `sharp` usage: inputs, preprocess, mask stats, previews |
+| `rmbg2/rmbg2-session.mjs` | the ONNX session + the batch loop |
+| `rmbg2/rmbg2-report.mjs` | the standalone HTML report |
+| `rmbg2/rmbg2-serve.mjs` | the `--serve` JSON protocol |
+| `rmbg2/rmbg2-bench.mjs` | provider benchmark + mask correctness check |
+| `rmbg2/rmbg2-apitest.mjs` | upload/delete/traversal checks (needs the dev server) |
+| `rmbg2/rmbg2-tokentest.mjs` | token-plumbing regression guard |
+| `rmbg2/rmbg2-reruntest.mjs` | proves a reconnecting stream cannot re-run a job |
+| `rmbg2/rmbg2-releasetest.mjs` | proves each model is closed between models |
+| `rmbg2/rmbg2-vite-plugin.mjs` | dev-only `/rmbg2` routes (page, list, upload, delete, providers, run, report) |
+| `rmbg2/rmbg2.page.html` | the lab page |
 
 ## Reading the numbers
 

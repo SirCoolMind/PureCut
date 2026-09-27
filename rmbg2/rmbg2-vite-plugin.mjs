@@ -14,7 +14,7 @@
  * unless the socket came from the loopback interface; and the page itself is
  * absent from `dist/`. Nothing here can end up in the published site.
  *
- * Inference is delegated to `scripts/rmbg2.mjs` as a CHILD PROCESS, never
+ * Inference is delegated to `rmbg2/rmbg2.mjs` as a CHILD PROCESS, never
  * imported. Two reasons, and the second is the important one:
  *   1. A 1024x1024 RMBG-2.0 run is a multi-GB working set; if it dies it should
  *      die alone, not take the dev server with it.
@@ -180,7 +180,7 @@ export function rmbg2Lab() {
   const runner = new Runner()
 
   return {
-    name: 'purecut:rmbg2-lab',
+    name: 'purecut:rmbg2',
     apply: 'serve',
 
     configureServer(server) {

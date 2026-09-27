@@ -42,9 +42,8 @@ Thumbs.db
 .refactor-baseline/
 tests/artifacts/
 
-# RMBG-2.0 local lab (scripts/rmbg2*.mjs). Scratch space: your test images, the
+# RMBG-2.0 local lab (rmbg2/). Scratch space: your test images, the
 # generated cutouts, and the multi-hundred-MB checkpoint cache. Never published -
 # the lab is a local CPU tool, not part of the app. The README ships so a fresh
 # clone still knows how to set the lab up.
-rmbg2-lab/*
-!rmbg2-lab/README.md
+rmbg2/lab/*

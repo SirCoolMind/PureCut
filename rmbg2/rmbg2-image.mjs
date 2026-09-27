@@ -43,7 +43,7 @@ export async function listInputs(filters) {
     names = (await readdir(INPUT_DIR)).filter((n) => IMAGE_EXT.test(n))
   } catch {
     // A missing folder is fine: absolute paths below do not need it. The GUI keeps
-    // its uploads in `rmbg2-lab/uploads/` and passes full paths, so this path must
+    // its uploads in `rmbg2/lab/uploads/` and passes full paths, so this path must
     // work even when the CLI's `inputs/` folder does not exist.
   }
 

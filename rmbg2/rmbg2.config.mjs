@@ -16,8 +16,8 @@
  * no GPU / WebGPU backend, and no device selection anywhere in the lab.
  *
  * Shared by:
- *   - scripts/rmbg2.mjs          (the Node CLI)
- *   - scripts/rmbg2-vite-plugin.mjs (the dev-only `/rmbg2` route + API and page)
+ *   - rmbg2/rmbg2.mjs          (the Node CLI)
+ *   - rmbg2/rmbg2-vite-plugin.mjs (the dev-only `/rmbg2` route + API and page)
  *
  * Plain `.mjs`, no dependencies, importable from a plain Node script.
  */
@@ -26,12 +26,12 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-/** Repository root (this file lives in `scripts/`). */
+/** Repository root (this file lives in `rmbg2/`). */
 export const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 /** Where input images live and where cutouts + the report are written. */
-export const INPUT_DIR = path.join(ROOT, 'rmbg2-lab', 'inputs')
-export const OUTPUT_DIR = path.join(ROOT, 'rmbg2-lab', 'outputs')
+export const INPUT_DIR = path.join(ROOT, 'rmbg2', 'lab', 'inputs')
+export const OUTPUT_DIR = path.join(ROOT, 'rmbg2', 'lab', 'outputs')
 
 /**
  * Scratch folder for images uploaded through the GUI.
@@ -42,7 +42,7 @@ export const OUTPUT_DIR = path.join(ROOT, 'rmbg2-lab', 'outputs')
  * when it loads, so a run only ever covers what was uploaded in that session and
  * nothing is accumulated between visits.
  */
-export const UPLOAD_DIR = path.join(ROOT, 'rmbg2-lab', 'uploads')
+export const UPLOAD_DIR = path.join(ROOT, 'rmbg2', 'lab', 'uploads')
 
 /** The dev-only route. Registered by the plugin, absent from a production build. */
 export const PAGE_PATH = 'rmbg2.html'

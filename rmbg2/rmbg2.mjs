@@ -1,7 +1,7 @@
 /**
  * rmbg2.mjs — PureCut local (Node) tester for Bria RMBG-2.0.
  *
- *   npm run rmbg2                 # every image in rmbg2-lab/inputs
+ *   npm run rmbg2                 # every image in rmbg2/lab/inputs
  *   npm run rmbg2 -- photo.jpg    # one image, or a substring filter
  *   npm run rmbg2 -- --list       # show what would run, touch nothing
  *   npm run rmbg2:help
@@ -81,7 +81,7 @@ function parseArgs(argv) {
 const HELP = `
 PureCut x RMBG-2.0 local lab (native CPU, not the browser)
 
-  npm run rmbg2                       process every image in rmbg2-lab/inputs
+  npm run rmbg2                       process every image in rmbg2/lab/inputs
   npm run rmbg2 -- photo.jpg          process one image (substring filter)
   npm run rmbg2 -- a.jpg b.png        several
   npm run rmbg2 -- --list             list inputs, download nothing
@@ -99,9 +99,9 @@ Flags
   --serve                JSON protocol for the dev-only page (see npm run dev)
 
 Output
-  rmbg2-lab/outputs/<name>-cutout.png     transparent cutout
-  rmbg2-lab/outputs/<name>-mask.png       raw alpha mask
-  rmbg2-lab/outputs/report.html           side-by-side visual report
+  rmbg2/lab/outputs/<name>-cutout.png     transparent cutout
+  rmbg2/lab/outputs/<name>-mask.png       raw alpha mask
+  rmbg2/lab/outputs/report.html           side-by-side visual report
 
 The token is required because briaai/RMBG-2.0 is a gated repo. Accept the
 licence at https://huggingface.co/briaai/RMBG-2.0 first, then put the token in
@@ -209,7 +209,7 @@ async function main() {
   // fail on a missing token.
   if (opts.list) {
     const inputs = await listInputs(opts.filters)
-    process.stdout.write(`${inputs.length} input image(s) in rmbg2-lab/inputs\n`)
+    process.stdout.write(`${inputs.length} input image(s) in rmbg2/lab/inputs\n`)
     for (const file of inputs) process.stdout.write(`  ${path.basename(file)}\n`)
     return
   }
@@ -249,10 +249,10 @@ async function main() {
   if (!inputs.length) {
     // An empty folder is the first-run experience, so fill it instead of erroring.
     if (opts.filters.length) {
-      throw new Error(`No image matched: ${opts.filters.join(', ')}\nLooked in: rmbg2-lab/inputs`)
+      throw new Error(`No image matched: ${opts.filters.join(', ')}\nLooked in: rmbg2/lab/inputs`)
     }
     const created = await ensureExemplars(sharp)
-    process.stdout.write(`rmbg2-lab/inputs was empty; created ${created.length} synthetic sample(s).\n`)
+    process.stdout.write(`rmbg2/lab/inputs was empty; created ${created.length} synthetic sample(s).\n`)
     process.stdout.write('Drop your own images in there to test them.\n\n')
     inputs.push(...(await listInputs([])))
   }
@@ -268,7 +268,7 @@ async function main() {
   const failed = results.filter((r) => r.error).length
   log('')
   log(`done: ${results.length - failed} ok, ${failed} failed`)
-  log('next: open rmbg2-lab/outputs/report.html')
+  log('next: open rmbg2/lab/outputs/report.html')
 }
 
 // Only run the CLI when this file *is* the entry point. Without this guard,

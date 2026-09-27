@@ -8,13 +8,13 @@ echo    PureCut - RMBG-2.0 Local Lab (terminal version)
 echo =======================================================
 echo.
 echo  Runs the real briaai/RMBG-2.0 checkpoint on this machine
-echo  and writes the results to rmbg2-lab\outputs\.
+echo  and writes the results to rmbg2\lab\outputs\.
 echo.
-echo  Want the point-and-click version instead? start-rmbg2.bat
+echo  Want the point-and-click version instead? start-rmbg2-gui.bat
 echo.
 
 REM ---------------------------------------------------------------
-REM Prerequisites (same guards as start-rmbg2.bat)
+REM Prerequisites (same guards as start-rmbg2-gui.bat)
 REM ---------------------------------------------------------------
 where node >nul 2>nul
 if %ERRORLEVEL% neq 0 (
@@ -85,14 +85,14 @@ if "!HAVE_TOKEN!"=="0" (
 REM ===============================================================
 REM STEP 1 - tell the user where to put their images
 REM ===============================================================
-if not exist "rmbg2-lab\inputs" mkdir "rmbg2-lab\inputs"
+if not exist "rmbg2\lab\inputs" mkdir "rmbg2\lab\inputs"
 
 echo.
 echo ---------------------------------------------------------------
 echo  STEP 1 of 2  -  Put your images here
 echo ---------------------------------------------------------------
 echo.
-echo     %CD%\rmbg2-lab\inputs
+echo     %CD%\rmbg2\lab\inputs
 echo.
 echo  Copy or drag your photos into that folder. Any of these work:
 echo    .png  .jpg  .jpeg  .webp  .avif  .tif  .tiff  .gif  .bmp
@@ -102,7 +102,7 @@ echo.
 echo  Already have images there? Press Enter and they will be picked up.
 echo.
 
-start "" explorer "%CD%\rmbg2-lab\inputs"
+start "" explorer "%CD%\rmbg2\lab\inputs"
 
 REM `set /p` rather than `pause` for this wait, deliberately.
 REM
@@ -118,7 +118,7 @@ REM STEP 2 - count, confirm, run
 REM ===============================================================
 set "COUNT=0"
 set "NAMES="
-for %%F in ("rmbg2-lab\inputs\*.png" "rmbg2-lab\inputs\*.jpg" "rmbg2-lab\inputs\*.jpeg" "rmbg2-lab\inputs\*.webp" "rmbg2-lab\inputs\*.avif" "rmbg2-lab\inputs\*.tif" "rmbg2-lab\inputs\*.tiff" "rmbg2-lab\inputs\*.gif" "rmbg2-lab\inputs\*.bmp") do (
+for %%F in ("rmbg2\lab\inputs\*.png" "rmbg2\lab\inputs\*.jpg" "rmbg2\lab\inputs\*.jpeg" "rmbg2\lab\inputs\*.webp" "rmbg2\lab\inputs\*.avif" "rmbg2\lab\inputs\*.tif" "rmbg2\lab\inputs\*.tiff" "rmbg2\lab\inputs\*.gif" "rmbg2\lab\inputs\*.bmp") do (
     if exist "%%~fF" (
         set /a COUNT+=1
         set "NAMES=!NAMES!%%~nxF "
@@ -132,7 +132,7 @@ echo ---------------------------------------------------------------
 echo.
 
 if "!COUNT!"=="0" (
-    echo     No images found in rmbg2-lab\inputs
+    echo     No images found in rmbg2\lab\inputs
     echo.
     echo     Four synthetic samples will be generated so you can see the
     echo     model work, and the run will continue without them.
@@ -143,7 +143,7 @@ if "!COUNT!"=="0" (
     echo.
     call :ListNames
     echo.
-    echo     Output goes to: rmbg2-lab\outputs\
+    echo     Output goes to: rmbg2\lab\outputs\
     echo       ^<name^>-cutout.png   transparent cutout
     echo       ^<name^>-mask.png     raw alpha mask
     echo       report.html          side-by-side report
@@ -166,7 +166,7 @@ echo ---------------------------------------------------------------
 echo.
 echo   The first run on a checkpoint downloads it ^(223 MB for q4f16,
 echo   490 MB for fp16, 977 MB for fp32^). After that the weights are
-echo   cached in rmbg2-lab\.cache\ and reused, so later runs start
+echo   cached in rmbg2\lab\.cache\ and reused, so later runs start
 echo   straight away.
 echo.
 echo   Session load takes about 25 s, then roughly 16-20 s per image on
@@ -181,7 +181,7 @@ set "RUN_EXIT=!ERRORLEVEL!"
 echo.
 if "!RUN_EXIT!"=="0" (
     echo [OK] Finished. Opening the report...
-    call :OpenFile "rmbg2-lab\outputs\report.html"
+    call :OpenFile "rmbg2\lab\outputs\report.html"
 ) else (
     echo [ERROR] The run failed. Read the message above - the common ones are:
     echo         HTTP 401 / 403  -^> the token was not accepted, or the licence
@@ -189,7 +189,7 @@ if "!RUN_EXIT!"=="0" (
     echo         protobuf error  -^> truncated download; run again to refetch
     echo         out of memory   -^> try the smaller checkpoint:
     echo                             npm run rmbg2 -- --checkpoint=onnx/model_q4f16.onnx
-    if exist "rmbg2-lab\outputs\report.html" call :OpenFile "rmbg2-lab\outputs\report.html"
+    if exist "rmbg2\lab\outputs\report.html" call :OpenFile "rmbg2\lab\outputs\report.html"
 )
 
 echo.

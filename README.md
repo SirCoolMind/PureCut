@@ -58,7 +58,7 @@ Double-click **`start.bat`** in this directory.
 to create a browser session and its fixed 1024×1024 runtime has a multi-GB working set. It is
 therefore available only as a local Windows/Node lab, never in the deployed web application.
 
-Double-click **[`start-rmbg2.bat`](start-rmbg2.bat)** to install the Node-only dependencies when
+Double-click **[`start-rmbg2-gui.bat`](start-rmbg2-gui.bat)** to install the Node-only dependencies when
 needed and open the local lab at `http://localhost:5173/rmbg2`. The launcher checks that a Hugging
 Face token is configured before starting; it gives exact setup instructions if one is missing.
 
@@ -66,12 +66,12 @@ RMBG-2.0 is a gated Hugging Face repository. Before its first download:
 
 1. Accept the licence at <https://huggingface.co/briaai/RMBG-2.0>.
 2. Create a **READ** token at <https://huggingface.co/settings/tokens>.
-3. Create a `.env` file beside `start-rmbg2.bat` containing `HF_TOKEN=hf_your_token_here`.
+3. Create a `.env` file beside `start-rmbg2-gui.bat` containing `HF_TOKEN=hf_your_token_here`.
 
 The `.env` file is gitignored. The launcher requires the token before it starts, even if weights
 are already cached; the token is sent only to `huggingface.co` when gated model weights need to
 be downloaded. See
-[`rmbg2-lab/README.md`](rmbg2-lab/README.md) for hardware limits and troubleshooting.
+[`rmbg2/README.md`](rmbg2/README.md) for hardware limits and troubleshooting.
 
 ### Option 2: Command Line
 ```bash
@@ -144,7 +144,7 @@ These models were evaluated and are deliberately not selectable.
 ### Local RMBG-2.0 lab — native Node models
 
 `briaai/RMBG-2.0` can be tested locally by double-clicking
-[`start-rmbg2.bat`](start-rmbg2.bat), through the Node-only lab at `/rmbg2`, or with
+[`start-rmbg2-gui.bat`](start-rmbg2-gui.bat), through the Node-only lab at `/rmbg2`, or with
 `npm run rmbg2`; it is not included in the deployed browser application. All three checkpoints
 are the same 1024×1024 model and require substantial native RAM while a session is loaded.
 
@@ -158,7 +158,7 @@ The lab rejects a run before loading ONNX when free physical RAM is below the ch
 threshold. This intentionally prevents RMBG-2.0 runs on 4 GB and 8 GB machines. Even on 16 GB,
 only q4f16 may be viable after closing memory-heavy applications. GUI runs release their native
 session after completion; this returns the multi-GB runtime allocation instead of retaining it
-while idle. See [`rmbg2-lab/README.md`](rmbg2-lab/README.md) for setup and troubleshooting.
+while idle. See [`rmbg2/README.md`](rmbg2/README.md) for setup and troubleshooting.
 
 ---
 

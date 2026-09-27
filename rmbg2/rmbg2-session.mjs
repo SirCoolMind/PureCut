@@ -50,7 +50,7 @@ export const mb = (bytes) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 
 /** Where one checkpoint's weights live. Kept in one place so cache and reports agree. */
 export function cachePaths(model, file) {
-  const dir = path.join(ROOT, 'rmbg2-lab', '.cache', model.replace('/', '__'))
+  const dir = path.join(ROOT, 'rmbg2', 'lab', '.cache', model.replace('/', '__'))
   const weights = path.join(dir, path.basename(file))
   return { dir, weights, meta: `${weights}.meta.json` }
 }
@@ -95,7 +95,7 @@ export class Rmbg2Session {
     // The provider is part of the cache key: a dml session and a cpu session are
     // different sessions, and reusing one for the other would silently report the
     // wrong timings.
-    this.cacheDir = path.join(ROOT, 'rmbg2-lab', '.cache', model.replace('/', '__'))
+    this.cacheDir = path.join(ROOT, 'rmbg2', 'lab', '.cache', model.replace('/', '__'))
   }
 
   /** Changing provider must drop the warm session, exactly like changing checkpoint. */
@@ -267,7 +267,7 @@ export class Rmbg2Session {
         2
       )
     )
-    this.onLog(`weights: saved ${mb(seen)} to rmbg2-lab/.cache - future runs reuse it`)
+    this.onLog(`weights: saved ${mb(seen)} to rmbg2/lab/.cache - future runs reuse it`)
     return this.localPath
   }
 

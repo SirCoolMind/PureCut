@@ -18,7 +18,7 @@ server, no API, and no backend — images never leave the device.
 | Production build | `npm run build` |
 | Preview the built output | `npm run preview` |
 | Local RMBG-2.0 CPU lab (see below) | `npm run rmbg2` / `npm run rmbg2:help` |
-| Local RMBG-2.0 CPU lab, one-click GUI (Windows) | `start-rmbg2.bat` |
+| Local RMBG-2.0 CPU lab, one-click GUI (Windows) | `start-rmbg2-gui.bat` |
 | Local RMBG-2.0 CPU lab, one-click terminal (Windows) | `start-rmbg2-cmd.bat` |
 | Local RMBG-2.0 lab, point-and-click GUI | `npm run rmbg2:lab` → `/rmbg2` |
 | Pre-download RMBG-2.0 weights | `npm run rmbg2:preload` / `:preload:all` |
@@ -161,7 +161,7 @@ OOM — compare the local byte count against the repo's reported size before con
 anything. And since the app fetches weights from HF at runtime, you can test a new model id
 by editing `modelOptions` alone, with no local mirroring.
 
-### Testing RMBG-2.0 anyway: the Node-side lab (`rmbg2-lab/`)
+### Testing RMBG-2.0 anyway: the Node-side lab (`rmbg2/`)
 
 RMBG-2.0 is unrunnable *in a browser*, but not *on the machine*. The identical bytes create a
 session fine under `onnxruntime-node`, so there is a local CPU tester that runs the real model
@@ -170,17 +170,17 @@ outside `src/` and must stay there.
 
 | File | Role |
 | --- | --- |
-| `scripts/rmbg2.mjs` | CLI only: args, help, entry point |
-| `scripts/rmbg2.config.mjs` | paths, checkpoints, execution providers, preprocessing constants, token |
-| `scripts/rmbg2-image.mjs` | ALL `sharp` usage: inputs, preprocess, mask stats, previews |
-| `scripts/rmbg2-session.mjs` | the ONNX session + the batch loop |
-| `scripts/rmbg2-report.mjs` | the standalone HTML report |
-| `scripts/rmbg2-serve.mjs` | the `--serve` newline-JSON protocol |
-| `scripts/rmbg2-bench.mjs` | provider benchmark, with a mask-correctness check |
-| `scripts/rmbg2-vite-plugin.mjs` | dev-only `/rmbg2` routes (page, list, providers, upload, delete, clear, preload, run, report, out/, input/); spawns the CLI as a **child process** |
-| `scripts/rmbg2.page.html` | the lab page — a GUI laid out so the controls fit one screen, with results below the fold |
-| `rmbg2-lab/inputs/` | the **CLI's** working folder |
-| `rmbg2-lab/uploads/` | the **GUI's** folder; emptied on page load, never listed by the CLI |
+| `rmbg2/rmbg2.mjs` | CLI only: args, help, entry point |
+| `rmbg2/rmbg2.config.mjs` | paths, checkpoints, execution providers, preprocessing constants, token |
+| `rmbg2/rmbg2-image.mjs` | ALL `sharp` usage: inputs, preprocess, mask stats, previews |
+| `rmbg2/rmbg2-session.mjs` | the ONNX session + the batch loop |
+| `rmbg2/rmbg2-report.mjs` | the standalone HTML report |
+| `rmbg2/rmbg2-serve.mjs` | the `--serve` newline-JSON protocol |
+| `rmbg2/rmbg2-bench.mjs` | provider benchmark, with a mask-correctness check |
+| `rmbg2/rmbg2-vite-plugin.mjs` | dev-only `/rmbg2` routes (page, list, providers, upload, delete, clear, preload, run, report, out/, input/); spawns the CLI as a **child process** |
+| `rmbg2/rmbg2.page.html` | the lab page — a GUI laid out so the controls fit one screen, with results below the fold |
+| `rmbg2/lab/inputs/` | the **CLI's** working folder |
+| `rmbg2/lab/uploads/` | the **GUI's** folder; emptied on page load, never listed by the CLI |
 
 Those five `rmbg2-*` modules are one file's job split at real seams, because the single
 runner crossed the repo's 800-line budget in `context:check`. Nothing in `rmbg2-image.mjs`
@@ -190,10 +190,10 @@ touch them, and only `rmbg2.mjs` should run work at import time.
 `npm run rmbg2` runs a batch; `npm run rmbg2:lab` opens the GUI at
 `http://localhost:5173/rmbg2` (or reach it during any `npm run dev`), where you can drop in
 images, pick which to process, and choose checkpoint + provider. Two Windows launchers wrap
-these: `start-rmbg2.bat` (GUI) and `start-rmbg2-cmd.bat` (terminal, two-step: it shows the
+these: `start-rmbg2-gui.bat` (GUI) and `start-rmbg2-cmd.bat` (terminal, two-step: it shows the
 input folder, waits for Enter, then confirms the image count before running). `npm run
 rmbg2:bench` compares providers and flags a wrong mask; `npm run rmbg2:preload` fetches weights
-deliberately so the first run does not stall. `rmbg2-lab/README.md` has setup and troubleshooting.
+deliberately so the first run does not stall. `rmbg2/README.md` has setup and troubleshooting.
 
 Uploads go through `/rmbg2/upload?name=<file>` as a **raw body** (not multipart, which would
 need a dependency). The name is reduced to a basename, sanitised, and extension-whitelisted,
@@ -259,7 +259,7 @@ Things that are easy to get wrong here:
   plugin ends the SSE response the moment it sees the result, so the release log had to move
   *before* the result send. If you add a step that reports progress at the end of a run, emit it
   before the result.
-- **Editing the runner modules needs a dev-server restart.** `scripts/rmbg2.mjs --serve` runs as a
+- **Editing the runner modules needs a dev-server restart.** `rmbg2/rmbg2.mjs --serve` runs as a
   long-lived CHILD process, so changes to `rmbg2-serve.mjs` / `rmbg2-session.mjs` do not reach an
   already-spawned child. Symptom: code changes appear to have no effect while the old child keeps
   serving. (Also check the port — a stale dev server on 5173 silently serves an old plugin, and

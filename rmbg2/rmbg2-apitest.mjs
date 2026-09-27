@@ -8,7 +8,8 @@ let failures = 0
 // write there, and a before/after diff is the only robust way to assert it: matching
 // on names would flag files that legitimately live there (samples, a staged batch),
 // and would miss a write with a name it did not predict.
-const INPUTS_DIR = path.join('rmbg2-lab', 'inputs')
+const LAB_DIR = path.join('rmbg2', 'lab')
+const INPUTS_DIR = path.join(LAB_DIR, 'inputs')
 const inputsBefore = await readdir(INPUTS_DIR).catch(() => [])
 
 function check(label, ok, detail = '') {
@@ -51,13 +52,13 @@ check('empty upload refused', empty.status === 400, `HTTP ${empty.status}`)
 
 // ---- 5. the upload is really on disk with the right size ---------------------
 // The GUI keeps its uploads in `uploads/`, NOT in the CLI's `inputs/`.
-const info = await stat(path.join('rmbg2-lab', 'uploads', 'giselle-original.jpg'))
+const info = await stat(path.join(LAB_DIR, 'uploads', 'giselle-original.jpg'))
 check('file on disk matches byte count', info.size === photo.length, `${info.size} vs ${photo.length}`)
 
 // ---- 6. nothing escaped the folder ------------------------------------------
 try {
-  await stat(path.join('rmbg2-lab', 'evil.png'))
-  check('no traversal artefact written', false, 'evil.png exists in rmbg2-lab/')
+  await stat(path.join(LAB_DIR, 'evil.png'))
+  check('no traversal artefact written', false, 'evil.png exists in rmbg2/lab/')
 } catch {
   check('no traversal artefact written', true)
 }
