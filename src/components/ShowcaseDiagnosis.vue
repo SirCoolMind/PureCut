@@ -1,6 +1,6 @@
 <script setup>
 /**
- * ShowcaseDiagnosis — the right-hand "Model Scorecard & Diagnosis" card of the
+ * ShowcaseDiagnosis — the right-hand model scorecard of the
  * Showcase modal.
  *
  * Extracted from `ShowcaseModal.vue` (session 4) together with its scoped CSS.
@@ -13,7 +13,7 @@
  * markup stays byte-identical to the version that lived in the host, and so the
  * child stays reactive if the host ever replaces the object.
  */
-import { Check, ShieldAlert } from 'lucide-vue-next'
+import { Check } from 'lucide-vue-next'
 
 defineProps({
   /** Key of the model currently selected in the host. */
@@ -43,20 +43,14 @@ defineProps({
     </div>
 
     <div class="diagnosis-body">
-      <div class="telemetry-row">
-        <div class="tele-item">
-          <span class="tele-label">Typical Latency</span>
-          <span class="tele-val">{{ modelsData[model].executionTime }}</span>
-        </div>
-        <div class="tele-item">
-          <span class="tele-label">Memory Profile</span>
-          <span class="tele-val">{{ modelsData[model].memoryProfile }}</span>
-        </div>
-      </div>
-
       <div class="eval-section">
-        <h4>Cutout Analysis on Test Pose</h4>
-        <p class="summary-text">{{ modelsData[model].summary }}</p>
+        <h4>Memory Profile</h4>
+        <ul class="eval-list pros">
+          <li>
+            <Check :size="13" />
+            <span>{{ modelsData[model].memoryProfile }}</span>
+          </li>
+        </ul>
       </div>
 
       <div class="eval-section">
@@ -69,15 +63,6 @@ defineProps({
         </ul>
       </div>
 
-      <div class="eval-section" v-if="modelsData[model].cons.length">
-        <h4>Limitations</h4>
-        <ul class="eval-list cons">
-          <li v-for="(con, i) in modelsData[model].cons" :key="i">
-            <ShieldAlert :size="13" />
-            <span>{{ con }}</span>
-          </li>
-        </ul>
-      </div>
     </div>
   </div>
 </template>
@@ -90,7 +75,7 @@ defineProps({
   padding: 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1rem;
 }
 
 .diagnosis-header {
@@ -136,31 +121,10 @@ defineProps({
   color: #10b981;
 }
 
-.telemetry-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
-}
-
-.tele-item {
-  background: #131d31;
-  border: 1px solid #1e293b;
-  border-radius: 8px;
-  padding: 0.65rem 0.75rem;
+.diagnosis-body {
   display: flex;
   flex-direction: column;
-}
-
-.tele-label {
-  font-size: 0.7rem;
-  color: #64748b;
-  margin-bottom: 0.2rem;
-}
-
-.tele-val {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #e2e8f0;
+  gap: 1rem;
 }
 
 .eval-section h4 {
@@ -169,13 +133,6 @@ defineProps({
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: #94a3b8;
-}
-
-.summary-text {
-  margin: 0;
-  font-size: 0.85rem;
-  color: #cbd5e1;
-  line-height: 1.5;
 }
 
 .eval-list {
@@ -205,16 +162,6 @@ defineProps({
   margin-top: 2px;
 }
 
-.eval-list.cons li {
-  color: #e2e8f0;
-}
-
-.eval-list.cons svg {
-  color: #f59e0b;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
 @media (max-width: 767px) {
   .model-diagnosis-card {
     gap: 1rem;
@@ -234,16 +181,6 @@ defineProps({
     padding: 0.3rem 0.5rem;
   }
 
-  .telemetry-row {
-    grid-template-columns: 1fr;
-    gap: 0.5rem;
-  }
-
-  .tele-item {
-    padding: 0.6rem 0.7rem;
-  }
-
-  .summary-text,
   .eval-list li {
     font-size: 0.82rem;
   }

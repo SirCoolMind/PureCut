@@ -1,12 +1,9 @@
 <script setup>
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import {
   Sparkles,
   ArrowLeft,
-  Download,
-  Check,
-  ShieldAlert,
-  ExternalLink,
+  ChevronLeft,
   ChevronRight
 } from 'lucide-vue-next'
 // The three largest blocks of this modal's markup each carry their own scoped
@@ -38,8 +35,10 @@ const emit = defineEmits(['back', 'cycle-font-size'])
 const baseUrl = import.meta.env.BASE_URL || './'
 
 const activeModel = ref('rmbg') // 'rmbg' | 'isnet' | 'modnet' | 'birefnet'
+const activeExhibit = ref('winter')
 const sliderPos = ref(50)
 const backdropBg = ref('checkerboard') // 'checkerboard' | 'white' | 'dark'
+const modelStrip = ref(null)
 
 const modelsData = {
   rmbg: {
@@ -49,7 +48,6 @@ const modelsData = {
     badgeClass: 'badge-recommended',
     architecture: 'Segformer / BiSeNet Backbone (43 MB)',
     rating: '9.8 / 10',
-    executionTime: '~7.9s (WASM SIMD, TTA)',
     memoryProfile: '~180 MB protected WASM heap',
     cutoutSrc: `${baseUrl}giselle-rmbg-tta.png`,
     pros: [
@@ -58,10 +56,7 @@ const modelsData = {
       'Accurate hair wisps, cap rim, sunglasses, and hands',
       'Extremely clean edge boundaries without metallic wall bleed'
     ],
-    cons: [
-      'Slightly higher compute requirement than MODNet'
-    ],
-    summary: 'The best all-round choice for e-commerce, complex fashion poses, and challenging studio photos. This showcase uses the default two-pass TTA Flip Fusion, preserving the complete outfit and cleanly separating it from the elevator walls.'
+    cons: []
   },
   isnet: {
     id: 'onnx-community/ISNet-ONNX',
@@ -70,7 +65,6 @@ const modelsData = {
     badgeClass: 'badge-precision',
     architecture: 'Dichotomous Image Segmentation (U-Net DIS)',
     rating: '8.7 / 10',
-    executionTime: '~13.0s (WASM SIMD, TTA)',
     memoryProfile: 'Lightweight browser WASM workload',
     cutoutSrc: `${baseUrl}giselle-isnet-tta.png`,
     pros: [
@@ -78,11 +72,7 @@ const modelsData = {
       'Sharp face, hair, cap, and boot contours',
       'Great separation between high-contrast subjects and backgrounds'
     ],
-    cons: [
-      'Minor softening on low-contrast light grey fabric against reflective stainless steel',
-      'Lower torso fabric exhibits partial transparency without tuning'
-    ],
-    summary: 'A fast, lightweight salient-object segmentation model that keeps strong contour detail while remaining a practical choice for constrained devices. This showcase uses the default two-pass TTA Flip Fusion.'
+    cons: []
   },
   modnet: {
     id: 'Xenova/modnet',
@@ -91,7 +81,6 @@ const modelsData = {
     badgeClass: 'badge-portrait',
     architecture: 'Objective-Decomposed Portrait Matting',
     rating: '7.0 / 10 (Pose Dependent)',
-    executionTime: '~7.6s (WASM SIMD, TTA)',
     memoryProfile: 'Smallest model; suited to modest devices',
     cutoutSrc: `${baseUrl}giselle-modnet-tta.png`,
     pros: [
@@ -99,11 +88,7 @@ const modelsData = {
       'Clean alpha gradient along hair strands and head silhouette',
       'Runs quickly on low-end CPUs'
     ],
-    cons: [
-      'Trained strictly on upright human portraits; misses torso/lower body in sitting/non-standard poses',
-      'Split subjects detected due to occlusion'
-    ],
-    summary: 'Specialized for webcam, passport, and upright head-and-shoulder portraits. This showcase uses the default two-pass TTA Flip Fusion. It is not designed for a seated full-body fashion photo; choose RMBG-1.4 or BiRefNet for that use case.'
+    cons: []
   },
   birefnet: {
     id: 'onnx-community/BiRefNet_512x512-ONNX',
@@ -112,7 +97,6 @@ const modelsData = {
     badgeClass: 'badge-quality',
     architecture: 'BiRefNet 512 × 512 · Two-Pass TTA Flip Fusion',
     rating: '9.9 / 10',
-    executionTime: '~55.9s (CPU WASM, TTA)',
     memoryProfile: 'Large WASM workload; allow ample free memory',
     cutoutSrc: `${baseUrl}giselle-birefnet-tta.png`,
     pros: [
@@ -121,19 +105,65 @@ const modelsData = {
       'Two-pass flip fusion refines difficult asymmetric details and fine boundaries',
       'Runs fully on-device with the browser-safe 512 × 512 BiRefNet checkpoint'
     ],
-    cons: [
-      'Large 473 MB download before first use',
-      'CPU WASM only; the two-pass TTA workflow is intentionally slower'
-    ],
-    summary: 'The quality-first browser option. This showcase uses the same two-pass TTA Flip Fusion enabled by default in PureCut, giving the most complete cutout for this challenging seated fashion pose.'
+    cons: []
   }
 }
 
+const exhibits = {
+  winter: {
+    name: 'Exhibit A: Winter',
+    label: 'Original: 3024 × 4032px',
+    originalSrc: `${baseUrl}Example1.jpg`,
+    originalResult: 'Original Winter photograph.',
+    results: {
+      rmbg: 'Complete portrait with clean clothing and hair boundaries.',
+      isnet: 'Strong silhouette separation with defined facial edges.',
+      modnet: 'Soft portrait matte with a smooth hair outline.',
+      birefnet: 'Detailed full-subject cutout with refined clothing edges.'
+    },
+    cutoutSources: {
+      rmbg: `${baseUrl}winter-rmbg-tta.png`,
+      isnet: `${baseUrl}winter-isnet-tta.png`,
+      modnet: `${baseUrl}winter-modnet-tta.png`,
+      birefnet: `${baseUrl}winter-birefnet-tta.png`
+    }
+  },
+  giselle: {
+    name: 'Exhibit B: Giselle',
+    label: 'Original: 1080 × 1440px',
+    originalSrc: `${baseUrl}giselle-original.jpg`,
+    originalResult: 'Complete seated pose against a detailed elevator background.',
+    results: {
+      rmbg: 'Complete subject with clean clothing and accessory edges.',
+      isnet: 'Strong facial and boot contours with a lighter lower-body edge.',
+      modnet: 'Clean head and hair result; the seated lower body is less complete.',
+      birefnet: 'Most complete full-pose result with detailed clothing boundaries.'
+    },
+    cutoutSources: {
+      rmbg: `${baseUrl}giselle-rmbg-tta.png`,
+      isnet: `${baseUrl}giselle-isnet-tta.png`,
+      modnet: `${baseUrl}giselle-modnet-tta.png`,
+      birefnet: `${baseUrl}giselle-birefnet-tta.png`
+    }
+  }
+}
+
+function scrollModels(direction) {
+  modelStrip.value?.scrollBy({ left: direction * 240, behavior: 'smooth' })
+}
+
+async function selectExhibit(exhibitKey) {
+  activeExhibit.value = exhibitKey
+  sliderPos.value = 50
+  await nextTick()
+}
+
 function downloadCutout(modelKey) {
-  const m = modelsData[modelKey]
+  const cutoutSrc = exhibits[activeExhibit.value].cutoutSources[modelKey]
+  if (!cutoutSrc) return
   const a = document.createElement('a')
-  a.href = m.cutoutSrc
-  a.download = `giselle-${modelKey}-cutout.png`
+  a.href = cutoutSrc
+  a.download = `${activeExhibit.value}-${modelKey}-cutout.png`
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
@@ -151,10 +181,7 @@ function downloadCutout(modelKey) {
         </button>
         <div class="header-divider"></div>
         <div class="showcase-title-box">
-          <div class="showcase-tag">
-            <Sparkles :size="12" /> Model Showcase
-          </div>
-          <h2>Input vs. Output Comparison Showcase</h2>
+          <h2><Sparkles :size="14" /> Model Showcase</h2>
         </div>
       </div>
 
@@ -189,21 +216,53 @@ function downloadCutout(modelKey) {
 
     <!-- Main Comparison Workspace -->
     <div class="showcase-content">
-      <!-- Top: Model Switcher Pills -->
-      <div class="model-selector-nav">
-        <button
-          v-for="(meta, key) in modelsData"
-          :key="key"
-          :class="['model-nav-btn', { active: activeModel === key }]"
-          @click="activeModel = key"
-        >
-          <span class="model-nav-name">{{ meta.name }}</span>
-          <span :class="['model-nav-badge', meta.badgeClass]">{{ meta.badge }}</span>
-        </button>
-      </div>
+      <section class="exhibit-section" aria-labelledby="exhibit-heading">
+        <div class="section-heading">
+          <p class="section-kicker">Choose an example</p>
+          <h3 id="exhibit-heading">Exhibit</h3>
+        </div>
+        <div class="exhibit-toggle" role="group" aria-label="Choose a showcase exhibit">
+          <button
+            v-for="(exhibit, key) in exhibits"
+            :key="key"
+            :class="{ active: activeExhibit === key }"
+            @click="selectExhibit(key)"
+          >
+            {{ exhibit.name }}
+          </button>
+        </div>
+      </section>
 
-      <!-- Center Split: Interactive Comparison Stage + Model Diagnosis Card -->
-      <div class="stage-grid">
+      <section class="model-section" aria-labelledby="model-heading">
+        <div class="section-heading model-heading-row">
+          <div>
+            <p class="section-kicker">Choose a cutout model</p>
+            <h3 id="model-heading">Model</h3>
+          </div>
+          <div class="model-scroll-actions" aria-label="Scroll model options">
+            <button title="Previous models" aria-label="Previous models" @click="scrollModels(-1)"><ChevronLeft :size="18" /></button>
+            <button title="Next models" aria-label="Next models" @click="scrollModels(1)"><ChevronRight :size="18" /></button>
+          </div>
+        </div>
+        <div ref="modelStrip" class="model-selector-nav">
+          <button
+            v-for="(meta, key) in modelsData"
+            :key="key"
+            :class="['model-nav-btn', { active: activeModel === key }]"
+            @click="activeModel = key"
+          >
+            <span class="model-nav-name">{{ meta.name }}</span>
+            <span :class="['model-nav-badge', meta.badgeClass]">{{ meta.badge }}</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="comparison-section" aria-labelledby="interactive-heading">
+        <div class="section-heading">
+          <p class="section-kicker">Interactive comparison</p>
+          <h3 id="interactive-heading">Before and after</h3>
+        </div>
+        <div class="stage-grid">
         <!-- Interactive Split Slider Viewport -->
         <ShowcaseSliderStage
           v-model="sliderPos"
@@ -211,12 +270,15 @@ function downloadCutout(modelKey) {
           :backdrop-bg="backdropBg"
           :active-model="activeModel"
           :model="modelsData[activeModel]"
+          :exhibit="exhibits[activeExhibit]"
+          :result-src="exhibits[activeExhibit].cutoutSources[activeModel]"
           @download="downloadCutout(activeModel)"
         />
 
         <!-- Right Side: Model Scorecard & Diagnosis -->
         <ShowcaseDiagnosis :model="activeModel" :models-data="modelsData" />
-      </div>
+        </div>
+      </section>
 
       <!-- Bottom: Side-by-Side 4-Column Gallery Comparison -->
       <ShowcaseGallery
@@ -224,6 +286,7 @@ function downloadCutout(modelKey) {
         :backdrop-bg="backdropBg"
         :base-url="baseUrl"
         :models-data="modelsData"
+        :exhibit="exhibits[activeExhibit]"
         @select="activeModel = $event"
       />
     </div>
@@ -291,21 +354,12 @@ function downloadCutout(modelKey) {
 
 .showcase-title-box {
   display: flex;
-  flex-direction: column;
-}
-
-.showcase-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: #38bdf8;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .showcase-title-box h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   font-size: 1.05rem;
   font-weight: 600;
   margin: 0;
@@ -362,14 +416,127 @@ function downloadCutout(modelKey) {
   gap: 1.5rem;
 }
 
+.exhibit-section,
+.model-section,
+.comparison-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.comparison-section {
+  padding-top: 1.5rem;
+  border-top: 1px solid #263247;
+}
+
+.section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+}
+
+.section-heading h3,
+.section-kicker {
+  margin: 0;
+}
+
+.section-heading h3 {
+  color: #f8fafc;
+  font-size: 1rem;
+}
+
+.section-kicker {
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.exhibit-toggle {
+  display: flex;
+  width: fit-content;
+  padding: 0.25rem;
+  gap: 0.25rem;
+  border: 1px solid #1e293b;
+  border-radius: 9px;
+  background: #0f172a;
+}
+
+.exhibit-toggle button,
+.model-scroll-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.exhibit-toggle button {
+  min-height: 34px;
+  padding: 0.4rem 0.75rem;
+}
+
+.exhibit-toggle button:hover,
+.model-scroll-actions button:hover {
+  color: #f8fafc;
+  background: #1e293b;
+}
+
+.exhibit-toggle button.active {
+  color: #fff;
+  background: #2563eb;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+}
+
+.model-heading-row {
+  justify-content: space-between;
+}
+
+.model-scroll-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.model-scroll-actions button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #334155;
+}
+
 /* Model Selector Pills */
 .model-selector-nav {
   display: flex;
   gap: 0.75rem;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: 0.55rem;
+  scrollbar-color: #475569 #0f172a;
+  scrollbar-width: thin;
+}
+
+.model-selector-nav::-webkit-scrollbar {
+  height: 8px;
+}
+
+.model-selector-nav::-webkit-scrollbar-track {
+  background: #0f172a;
+  border-radius: 999px;
+}
+
+.model-selector-nav::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 999px;
 }
 
 .model-nav-btn {
-  flex: 1;
+  flex: 1 0 235px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -468,19 +635,9 @@ function downloadCutout(modelKey) {
 
   .btn-back span,
   .header-divider,
-  .showcase-tag,
-  .showcase-title-box h2,
   .picker-label,
   .header-right > .btn-font-scale {
     display: none;
-  }
-
-  .showcase-title-box::after {
-    content: 'Model Showcase';
-    color: #f8fafc;
-    font-size: 0.95rem;
-    font-weight: 700;
-    white-space: nowrap;
   }
 
   .header-right {
@@ -503,17 +660,22 @@ function downloadCutout(modelKey) {
     gap: 1rem;
   }
 
-  .model-selector-nav {
-    margin: 0 -0.9rem;
-    padding: 0 0.9rem 0.25rem;
-    gap: 0.55rem;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scrollbar-width: none;
+  .exhibit-toggle {
+    width: 100%;
   }
 
-  .model-selector-nav::-webkit-scrollbar {
-    display: none;
+  .exhibit-toggle button {
+    flex: 1;
+  }
+
+  .model-selector-nav {
+    margin: 0 -0.9rem;
+    padding: 0 0.9rem;
+    gap: 0.55rem;
+  }
+
+  .model-heading-row {
+    align-items: flex-end;
   }
 
   .model-nav-btn {
@@ -539,6 +701,10 @@ function downloadCutout(modelKey) {
 
   .stage-grid {
     gap: 1rem;
+  }
+
+  .comparison-section {
+    padding-top: 1rem;
   }
 }
 

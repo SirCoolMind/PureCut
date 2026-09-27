@@ -43,6 +43,16 @@ defineProps({
   model: {
     type: Object,
     required: true
+  },
+  /** The selected exhibit's source image and display metadata. */
+  exhibit: {
+    type: Object,
+    required: true
+  },
+  /** The selected model's cutout for this exhibit, when a static result exists. */
+  resultSrc: {
+    type: String,
+    default: ''
   }
 })
 
@@ -61,47 +71,54 @@ const sliderPos = defineModel({ type: Number, required: true })
               <span>Interactive Split Comparison (Drag or Hover slider)</span>
             </div>
             <div class="card-bar-right">
-              <span class="orig-label">Original: 1080 × 1440px</span>
+              <span class="orig-label">{{ exhibit.label }}</span>
             </div>
           </div>
 
           <div :class="['slider-stage-viewport', `bg-${backdropBg}`]">
             <!-- Base Cutout Image (Layer 0) -->
             <img
-              :src="model.cutoutSrc"
+              v-if="resultSrc"
+              :src="resultSrc"
               alt="Model Cutout Result"
               class="viewport-media cutout-layer"
             />
 
+            <div v-else class="result-pending">
+              Add the four Winter model-result PNGs to enable this comparison.
+            </div>
+
             <!-- Clipped Original Image (Layer 1) -->
             <div
+              v-if="resultSrc"
               class="clipped-original-wrapper"
               :style="{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }"
             >
               <img
-                :src="`${baseUrl}giselle-original.jpg`"
-                alt="Original Photo"
+                :src="exhibit.originalSrc"
+                :alt="`Original ${exhibit.name} photo`"
                 class="viewport-media original-layer"
               />
             </div>
 
             <!-- Visual Divider Handle -->
-            <div class="slider-divider-line" :style="{ left: `${sliderPos}%` }">
+            <div v-if="resultSrc" class="slider-divider-line" :style="{ left: `${sliderPos}%` }">
               <div class="slider-pill-handle">
                 <span>◀ ▶</span>
               </div>
             </div>
 
             <!-- Labels -->
-            <div class="stage-badge badge-orig" :style="{ opacity: sliderPos > 15 ? 1 : 0 }">
-              Original Input
+            <div v-if="resultSrc" class="stage-badge badge-orig" :style="{ opacity: sliderPos > 15 ? 1 : 0 }">
+              {{ exhibit.name }} original
             </div>
-            <div class="stage-badge badge-cutout" :style="{ opacity: sliderPos < 85 ? 1 : 0 }">
-              {{ model.name }} Cutout
+            <div v-if="resultSrc" class="stage-badge badge-cutout" :style="{ opacity: sliderPos < 85 ? 1 : 0 }">
+              {{ model.name }} result
             </div>
 
             <!-- Native Range Overlay for Smooth Dragging -->
             <input
+              v-if="resultSrc"
               type="range"
               min="0"
               max="100"
@@ -112,7 +129,7 @@ const sliderPos = defineModel({ type: Number, required: true })
           </div>
 
           <!-- Bottom Action Strip -->
-          <div class="stage-footer-actions">
+          <div v-if="resultSrc" class="stage-footer-actions">
             <div class="slider-quick-buttons">
               <button class="btn-subtle" @click="sliderPos = 0">Cutout Only</button>
               <button class="btn-subtle" @click="sliderPos = 50">50 / 50 Split</button>
@@ -163,6 +180,17 @@ const sliderPos = defineModel({ type: Number, required: true })
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.result-pending {
+  max-width: 28rem;
+  padding: 1rem 1.25rem;
+  text-align: center;
+  color: #94a3b8;
+  line-height: 1.5;
+  border: 1px dashed #334155;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.78);
 }
 
 /* Backgrounds */

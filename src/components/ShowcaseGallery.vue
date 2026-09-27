@@ -34,6 +34,11 @@ defineProps({
   modelsData: {
     type: Object,
     required: true
+  },
+  /** The selected exhibit's source image and result descriptions. */
+  exhibit: {
+    type: Object,
+    required: true
   }
 })
 
@@ -44,8 +49,7 @@ const emit = defineEmits(['select'])
   <div class="gallery-overview-section">
     <div class="gallery-title-row">
       <div>
-        <h3>Same photo. Four browser-model cutouts.</h3>
-        <p>All four outputs use the default two-pass TTA Flip Fusion, generated through the actual browser pipeline with the same settings PureCut applies in the studio.</p>
+        <h3>{{ exhibit.name }}: browser-model cutouts</h3>
       </div>
     </div>
 
@@ -53,14 +57,14 @@ const emit = defineEmits(['select'])
       <!-- Column 1: Original Input -->
       <div class="gallery-card original-card">
         <div class="gcard-header">
-          <span class="gcard-title">Original Input Photo</span>
-          <span class="gcard-tag">1080 × 1440</span>
+          <span class="gcard-title">{{ exhibit.name }} original</span>
+          <span class="gcard-tag">Input</span>
         </div>
         <div class="gcard-media-box bg-dark">
-          <img :src="`${baseUrl}giselle-original.jpg`" alt="Original Giselle Photo" />
+          <img :src="exhibit.originalSrc" :alt="`Original ${exhibit.name} photo`" />
         </div>
         <div class="gcard-caption">
-          Seated pose inside elevator with brushed steel walls, denim boots, and loose sweatpants.
+          {{ exhibit.originalResult }}
         </div>
       </div>
 
@@ -75,10 +79,15 @@ const emit = defineEmits(['select'])
           <span :class="['gcard-tag', model.badgeClass]">{{ model.badge }}</span>
         </div>
         <div :class="['gcard-media-box', `bg-${backdropBg}`]">
-          <img :src="model.cutoutSrc" :alt="`${model.name} cutout`" />
+          <img
+            v-if="exhibit.cutoutSources?.[key]"
+            :src="exhibit.cutoutSources[key]"
+            :alt="`${model.name} cutout`"
+          />
+          <span v-else class="result-pending">Result image pending</span>
         </div>
         <div class="gcard-caption">
-          {{ model.summary }}
+          {{ exhibit.results[key] }}
         </div>
       </div>
     </div>
@@ -90,19 +99,15 @@ const emit = defineEmits(['select'])
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  margin-top: 1rem;
+  margin-top: 0;
+  padding-top: 1.5rem;
+  border-top: 1px solid #263247;
 }
 
 .gallery-title-row h3 {
   margin: 0 0 0.25rem 0;
   font-size: 1.15rem;
   color: #f8fafc;
-}
-
-.gallery-title-row p {
-  margin: 0;
-  font-size: 0.85rem;
-  color: #94a3b8;
 }
 
 .side-by-side-grid {
@@ -212,6 +217,13 @@ const emit = defineEmits(['select'])
   object-fit: contain;
 }
 
+.result-pending {
+  padding: 0.6rem;
+  color: #64748b;
+  font-size: 0.78rem;
+  text-align: center;
+}
+
 .gcard-caption {
   padding: 0.75rem 0.85rem;
   font-size: 0.78rem;
@@ -234,11 +246,6 @@ const emit = defineEmits(['select'])
   .gallery-title-row h3 {
     font-size: 1rem;
     line-height: 1.3;
-  }
-
-  .gallery-title-row p {
-    font-size: 0.78rem;
-    line-height: 1.45;
   }
 
   .side-by-side-grid {
