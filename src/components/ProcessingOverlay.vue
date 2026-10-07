@@ -3,6 +3,7 @@
 import { computed, ref } from 'vue'
 import { Check, Cpu, HardDrive } from 'lucide-vue-next'
 import scissorGif from '../assets/scissor-colored-fill.gif'
+import { CAN_USE_WEBGPU } from '../core/platform'
 
 const props = defineProps({
   currentStep: { type: Number, default: 0 },
@@ -13,7 +14,7 @@ const props = defineProps({
 
 const steps = ['Analyzing Image', 'Segmenting Subject', 'Refining Edges', 'Finalizing Output']
 const scissorIcon = scissorGif
-const runtimeLabel = ref(typeof navigator !== 'undefined' && navigator.gpu ? 'WebGPU' : 'CPU (WASM)')
+const runtimeLabel = ref(CAN_USE_WEBGPU ? 'WebGPU' : 'CPU (WASM)')
 const visibleStep = computed(() => Math.max(1, props.currentStep))
 // Grid items are centered in four equal columns (12.5%, 37.5%, 62.5%, 87.5%),
 // so progress targets those centers rather than the track's two outer edges.

@@ -1,5 +1,6 @@
 import { pipeline, env, AutoModelForSemanticSegmentation, RawImage } from '@huggingface/transformers';
 import { STORAGE_KEYS } from './core/storageKeys.js';
+import { FORCE_WASM_BROWSER } from './core/platform.js';
 import { modelOptions } from './constants.js';
 import { fuseTtaMask } from './core/maskOps.js';
 import { isSkillsafeModel, preloadSkillsafeModel, runSkillsafeModel, resetSkillsafeModels } from './skillsafeEngine.js';
@@ -31,7 +32,11 @@ if (typeof window !== 'undefined') {
   env.allowLocalModels = false;
   if (env.backends?.onnx?.wasm) {
     env.backends.onnx.wasm.proxy = false;
-    env.backends.onnx.wasm.numThreads = Math.max(1, (navigator.hardwareConcurrency || 4) - 1);
+    // Threads need SharedArrayBuffer, i.e. a cross-origin-isolated page. Safari ignores the
+    // COEP `credentialless` header coi-serviceworker sends it, so it is never isolated there.
+    env.backends.onnx.wasm.numThreads = window.crossOriginIsolated
+      ? Math.max(1, (navigator.hardwareConcurrency || 4) - 1)
+      : 1;
   }
   
   // Custom Fetch Interceptor to inject Hugging Face Access Token
@@ -65,7 +70,7 @@ async function resolveModelDevice(requestedDevice, modelId) {
   
   // BiRefNet (Swin backbone) and U2-Net models (ceil_mode MaxPool) are incompatible with WebGPU WGSL shader compilers.
   // Always route to multi-threaded WASM SIMD for rock-solid stability and zero shader errors.
-  if (isWasmOnlyModel(modelId)) {
+  if (isWasmOnlyModel(modelId) || FORCE_WASM_BROWSER) {
     return 'wasm';
   }
 
