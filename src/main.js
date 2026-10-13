@@ -4,5 +4,8 @@ import App from './App.vue'
 // here rather than from a component because several components render the same
 // controls and scoped styles cannot reach across a component boundary.
 import './styles/viewport-controls.css'
+// Registers the PWA `beforeinstallprompt` listener before the browser fires it;
+// the About tab that uses it is lazy-loaded much later.
+import './composables/useInstallPrompt.js'
 
 createApp(App).mount('#app')

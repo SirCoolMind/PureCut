@@ -39,6 +39,8 @@ import SubjectsDrawer from './SubjectsDrawer.vue'
 const props = defineProps({
   /** 'checkerboard' | 'white' | 'black' | 'gradient' - the backdrop class. */
   previewBg: { type: String, required: true },
+  /** Object URL of the custom background photo, shown when `previewBg` is 'image'. */
+  backgroundUrl: { type: String, default: null },
   /** 'slider' | 'brush' | 'select' | 'pan' */
   activeTool: { type: String, required: true },
   /** True while the pan drag is in progress; drops the transform transition. */
@@ -225,6 +227,18 @@ function handleBrushLeave(e) {
         transformOrigin: 'center center'
       }"
     >
+      <!-- Custom background photo, pinned to the image's box and cover-fitted the
+           same way useCustomBackground flattens it for download. -->
+      <img
+        v-if="previewBg === 'image' && backgroundUrl"
+        :src="backgroundUrl"
+        alt=""
+        aria-hidden="true"
+        class="viewport-img custom-bg-img"
+        :style="imageBoxStyle"
+        draggable="false"
+      />
+
       <!-- Cutout Result Image (Bottom Layer) — hidden during brush mode, canvas takes over -->
       <img
         v-if="resultUrl && activeTool !== 'brush'"
@@ -387,6 +401,8 @@ function handleBrushLeave(e) {
 .bg-white { background-color: #ffffff; }
 .bg-black { background-color: #05070d; }
 .bg-gradient { background: linear-gradient(135deg, #4f46e5 0%, #ec4899 100%); }
+.bg-image { background-color: #05070d; }
+.custom-bg-img { object-fit: cover; }
 
 .viewport-img {
   position: absolute;

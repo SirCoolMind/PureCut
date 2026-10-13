@@ -66,6 +66,7 @@ defineEmits(['browse', 'drop', 'select', 'load-sample'])
         :ref="inputRef"
         type="file"
         accept="image/png, image/jpeg, image/webp"
+        multiple
         class="sr-only"
         @change="$emit('select', $event)"
       />
@@ -76,7 +77,7 @@ defineEmits(['browse', 'drop', 'select', 'load-sample'])
 
       <div class="drop-text">
         <h3>Drop your photo here, or browse</h3>
-        <p>JPG, PNG, WebP up to 35 MB</p>
+        <p>JPG, PNG, WebP up to 35 MB · select several to batch-export a ZIP</p>
       </div>
 
       <button type="button" class="btn-cta">

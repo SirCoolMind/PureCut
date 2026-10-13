@@ -1,6 +1,6 @@
 import { pipeline, env, AutoModelForSemanticSegmentation, RawImage } from '@huggingface/transformers';
 import { STORAGE_KEYS } from './core/storageKeys.js';
-import { FORCE_WASM_BROWSER } from './core/platform.js';
+import { FORCE_WASM_BROWSER, CAN_USE_WEBGPU } from './core/platform.js';
 import { modelOptions } from './constants.js';
 import { fuseTtaMask } from './core/maskOps.js';
 import { isSkillsafeModel, preloadSkillsafeModel, runSkillsafeModel, resetSkillsafeModels } from './skillsafeEngine.js';
@@ -31,7 +31,11 @@ if (AutoModelForSemanticSegmentation?.MODEL_CLASS_MAPPINGS?.[0]) {
 if (typeof window !== 'undefined') {
   env.allowLocalModels = false;
   if (env.backends?.onnx?.wasm) {
-    env.backends.onnx.wasm.proxy = false;
+    // When this page can never use WebGPU (Safari/iOS, or no navigator.gpu), every model runs
+    // on WASM - on the main thread unless proxied, freezing the UI and the progress animation
+    // for the whole inference. The proxy worker keeps it responsive. ORT reads this once per
+    // page and the proxy rejects GPU-resident tensors, so it stays off wherever WebGPU may run.
+    env.backends.onnx.wasm.proxy = !CAN_USE_WEBGPU;
     // Threads need SharedArrayBuffer, i.e. a cross-origin-isolated page. Safari ignores the
     // COEP `credentialless` header coi-serviceworker sends it, so it is never isolated there.
     env.backends.onnx.wasm.numThreads = window.crossOriginIsolated
@@ -43,10 +47,13 @@ if (typeof window !== 'undefined') {
   const originalFetch = env.fetch || window.fetch;
   env.fetch = async (url, init) => {
     const token = localStorage.getItem(STORAGE_KEYS.hfToken);
-    if (token && url.includes('huggingface.co')) {
-      init = init || {};
-      init.headers = init.headers || {};
-      init.headers['Authorization'] = `Bearer ${token.trim()}`;
+    const href = typeof url === 'string' ? url : (url?.url ?? String(url));
+    if (token && href.includes('huggingface.co')) {
+      // init.headers may be a plain object, an array of pairs or a Headers instance;
+      // normalising through Headers keeps the token from being silently dropped.
+      const headers = new Headers(init?.headers);
+      headers.set('Authorization', `Bearer ${token.trim()}`);
+      init = { ...init, headers };
     }
     return originalFetch(url, init);
   };
@@ -55,10 +62,47 @@ if (typeof window !== 'undefined') {
 const loadedPipelines = {};
 
 /**
+ * Drop a cached pipeline and release its ONNX session. Deleting the reference alone leaves
+ * the WASM heap / WebGPU buffers of a multi-hundred-MB model alive until GC, if ever.
+ */
+function releasePipeline(key) {
+  const instance = loadedPipelines[key];
+  delete loadedPipelines[key];
+  if (instance && typeof instance.dispose === 'function') {
+    // A run still awaiting this instance would hang if its session vanished mid-inference,
+    // so disposal waits until no inference is in flight.
+    pendingDisposal.add(instance);
+    flushPendingDisposal();
+  }
+}
+
+/** Instances dropped from the cache, disposed once `activeRuns` reaches zero. */
+const pendingDisposal = new Set();
+let activeRuns = 0;
+
+function flushPendingDisposal() {
+  if (activeRuns > 0) return;
+  for (const instance of pendingDisposal) {
+    if (Object.values(loadedPipelines).includes(instance)) continue;
+    instance.dispose().catch((e) => console.warn('[PureCut] Pipeline dispose notice:', e));
+  }
+  pendingDisposal.clear();
+}
+
+/**
+ * Keep only one model resident: release every cached instance except `keepKey`.
+ */
+function releaseOtherModels(keepKey) {
+  for (const key of Object.keys(loadedPipelines)) {
+    if (key !== keepKey) releasePipeline(key);
+  }
+}
+
+/**
  * Clear in-memory cached model instances
  */
 export function resetLoadedModels() {
-  for (let key in loadedPipelines) delete loadedPipelines[key];
+  releaseOtherModels(null);
   resetSkillsafeModels();
 }
 
@@ -96,6 +140,7 @@ async function resolveModelDevice(requestedDevice, modelId) {
  */
 export async function preloadTransformersModel(modelId, dtype = 'q8', disableOptimization = false, device = 'webgpu', onProgress) {
   if (isSkillsafeModel(modelId)) {
+    releaseOtherModels(null);
     return await preloadSkillsafeModel(modelId, device, onProgress);
   }
 
@@ -103,6 +148,8 @@ export async function preloadTransformersModel(modelId, dtype = 'q8', disableOpt
   const pipelineKey = `${modelId}_${targetDevice}`;
 
   if (!loadedPipelines[pipelineKey]) {
+    releaseOtherModels(pipelineKey);
+    resetSkillsafeModels();
     const options = {
       device: targetDevice,
       progress_callback: onProgress,
@@ -121,6 +168,7 @@ export async function preloadTransformersModel(modelId, dtype = 'q8', disableOpt
  */
 export async function runTransformersModel(file, modelId, dtype = 'q8', disableOptimization = false, device = 'webgpu', onProgress, { tta = true } = {}) {
   if (isSkillsafeModel(modelId)) {
+    releaseOtherModels(null);
     return await runSkillsafeModel(file, modelId, device, onProgress, { tta });
   }
 
@@ -131,6 +179,8 @@ export async function runTransformersModel(file, modelId, dtype = 'q8', disableO
   const loadPipeline = async (dev) => {
     const key = `${modelId}_${dev}`;
     if (!loadedPipelines[key]) {
+      releaseOtherModels(key);
+      resetSkillsafeModels();
       if (onProgress) onProgress({ status: 'init', message: `Loading ${modelId.split('/')[1] || modelId} weights (${dev === 'webgpu' ? 'WebGPU' : 'CPU'})...` });
 
       const options = {
@@ -148,6 +198,7 @@ export async function runTransformersModel(file, modelId, dtype = 'q8', disableO
     return loadedPipelines[key];
   };
 
+  activeRuns++;
   try {
     let pipeInstance;
     try {
@@ -156,7 +207,7 @@ export async function runTransformersModel(file, modelId, dtype = 'q8', disableO
       // If WebGPU initialization fails (e.g. unsupported adapter or shader limit), auto-fallback to WASM
       if (effectiveDevice === 'webgpu') {
         console.warn('WebGPU pipeline initialization failed, falling back to WASM:', loadErr);
-        delete loadedPipelines[pipelineKey];
+        releasePipeline(pipelineKey);
         effectiveDevice = 'wasm';
         pipelineKey = `${modelId}_wasm`;
         pipeInstance = await loadPipeline(effectiveDevice);
@@ -171,7 +222,7 @@ export async function runTransformersModel(file, modelId, dtype = 'q8', disableO
       } catch (err) {
         if (effectiveDevice === 'webgpu') {
           console.warn('WebGPU inference failed. Falling back automatically to CPU (WASM)...', err);
-          delete loadedPipelines[pipelineKey];
+          releasePipeline(pipelineKey);
           effectiveDevice = 'wasm';
           pipelineKey = `${modelId}_wasm`;
 
@@ -180,12 +231,12 @@ export async function runTransformersModel(file, modelId, dtype = 'q8', disableO
             pipeInstance = await loadPipeline(effectiveDevice);
             return await pipeInstance(input);
           } catch (wasmErr) {
-            delete loadedPipelines[pipelineKey];
+            releasePipeline(pipelineKey);
             console.error('CPU WASM fallback failed:', wasmErr);
             throw wasmErr;
           }
         } else {
-          delete loadedPipelines[pipelineKey];
+          releasePipeline(pipelineKey);
           console.error('Inference crashed:', err);
           let friendlyMessage = err?.message || 'Processing Error.';
           if (friendlyMessage.includes('bad_alloc')) {
@@ -370,6 +421,8 @@ export async function runTransformersModel(file, modelId, dtype = 'q8', disableO
     };
   } finally {
     URL.revokeObjectURL(objectUrl);
+    activeRuns--;
+    flushPendingDisposal();
   }
 }
 

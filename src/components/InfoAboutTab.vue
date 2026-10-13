@@ -12,8 +12,11 @@
  * The host keeps the `v-if` that chooses the tab, and `.tab-content` sits on the
  * root here, so the fade-in animation still runs on every tab switch.
  */
-import { Github } from 'lucide-vue-next'
+import { Github, Download, CheckCircle2 } from 'lucide-vue-next'
 import { appVersion, appBuildHash } from '../constants.js'
+import { useInstallPrompt } from '../composables/useInstallPrompt.js'
+
+const { deferredPrompt, isInstalled, promptInstall, platform } = useInstallPrompt()
 </script>
 
 <template>
@@ -50,6 +53,31 @@ import { appVersion, appBuildHash } from '../constants.js'
       <a class="github-button" href="https://github.com/SirCoolMind/PureCut" target="_blank" rel="noopener noreferrer">
         <Github :size="14" aria-hidden="true" /> GitHub PureCut
       </a>
+    </section>
+    <section class="install-app" aria-labelledby="install-app-heading">
+      <p id="install-app-heading" class="section-label">Install as an app</p>
+      <p v-if="isInstalled" class="install-done">
+        <CheckCircle2 :size="14" aria-hidden="true" /> PureCut is installed on this device.
+      </p>
+      <template v-else>
+        <p>
+          PureCut installs like a native app: its own window and icon, and it opens without an
+          internet connection once a model has been downloaded.
+        </p>
+        <button v-if="deferredPrompt" type="button" class="install-button" @click="promptInstall">
+          <Download :size="14" aria-hidden="true" /> Install PureCut
+        </button>
+        <p v-else-if="platform === 'ios'" class="install-steps">
+          In Safari, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.
+        </p>
+        <p v-else-if="platform === 'android'" class="install-steps">
+          In Chrome, open the <strong>⋮</strong> menu and tap <strong>Install app</strong> (or <strong>Add to Home screen</strong>).
+        </p>
+        <p v-else class="install-steps">
+          In Chrome, Edge or Brave, click the install icon at the right of the address bar, or open the
+          browser menu and choose <strong>Install PureCut</strong>. Firefox desktop does not install web apps.
+        </p>
+      </template>
     </section>
     <div class="about-stats">
       <div class="about-stat">
@@ -150,6 +178,7 @@ import { appVersion, appBuildHash } from '../constants.js'
 }
 
 .project-details,
+.install-app,
 .engine-sources {
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 10px;
@@ -166,7 +195,8 @@ import { appVersion, appBuildHash } from '../constants.js'
   text-transform: uppercase;
 }
 
-.project-details p {
+.project-details p,
+.install-app p {
   color: #94a3b8;
   font-size: 12px;
   line-height: 1.55;
@@ -285,4 +315,48 @@ import { appVersion, appBuildHash } from '../constants.js'
   transform: translateY(-2px);
 }
 
+.install-app p + p,
+.install-steps {
+  margin-top: 8px !important;
+}
+
+.install-steps strong {
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+.install-done {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #34d399 !important;
+}
+
+.install-button {
+  align-items: center;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(129, 140, 248, 0.45);
+  border-radius: 9px;
+  color: #c7d2fe;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 10px;
+  padding: 9px 14px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  width: 100%;
+}
+
+.install-button:hover {
+  background: rgba(99, 102, 241, 0.25);
+  border-color: #a5b4fc;
+}
+
+.install-button:focus-visible {
+  outline: 2px solid #a5b4fc;
+  outline-offset: 2px;
+}
 </style>

@@ -20,9 +20,10 @@
  * `imageDimensions` arrives as the live reactive object rather than two numbers,
  * so the tag's title and body stay reactive to image changes.
  */
-import { Image as ImageIcon, Users, SplitSquareVertical, Paintbrush, BoxSelect, Move, RotateCcw, Check, Copy, Download } from 'lucide-vue-next'
+import { ref } from 'vue'
+import { Image as ImageIcon, ImagePlus, X, Users, SplitSquareVertical, Paintbrush, BoxSelect, Move, RotateCcw, Check, Copy, Download } from 'lucide-vue-next'
 
-defineProps({
+const props = defineProps({
   /** Loaded file's name, shown in the file tag. */
   fileName: { type: String, default: '' },
   /** Live `{ width, height }` of the loaded image. */
@@ -35,8 +36,12 @@ defineProps({
   subjectsDrawerOpen: { type: Boolean, default: false },
   /** 'slider' | 'brush' | 'select' | 'pan' */
   activeTool: { type: String, required: true },
-  /** 'checkerboard' | 'white' | 'black' | 'gradient' */
+  /** 'checkerboard' | 'white' | 'black' | 'gradient' | 'image' */
   previewBg: { type: String, required: true },
+  /** Object URL of the custom background photo; null until one is picked. */
+  backgroundUrl: { type: String, default: null },
+  /** Object URL of the cutout flattened onto that background (JPEG). */
+  compositeUrl: { type: String, default: null },
   /** "Copied!" flag driving the copy button's label. */
   copied: { type: Boolean, default: false },
   /** True once a cutout blob exists and can be copied. */
@@ -45,7 +50,28 @@ defineProps({
   resultUrl: { type: String, default: null }
 })
 
-defineEmits(['toggle-subjects', 'update:activeTool', 'update:previewBg', 'reset', 'copy'])
+const emit = defineEmits(['toggle-subjects', 'update:activeTool', 'update:previewBg', 'reset', 'copy', 'pick-background', 'clear-background'])
+
+const bgInput = ref(null)
+
+/** First click picks a photo; later clicks switch to it, or re-pick when already showing. */
+function onImageBackdrop() {
+  if (props.backgroundUrl && props.previewBg !== 'image') emit('update:previewBg', 'image')
+  else bgInput.value?.click()
+}
+
+function onBackgroundPicked(e) {
+  const file = e.target.files?.[0]
+  e.target.value = ''
+  if (!file) return
+  emit('pick-background', file)
+  emit('update:previewBg', 'image')
+}
+
+function onClearBackground() {
+  emit('clear-background')
+  emit('update:previewBg', 'checkerboard')
+}
 </script>
 
 <template>
@@ -82,7 +108,16 @@ defineEmits(['toggle-subjects', 'update:activeTool', 'update:previewBg', 'reset'
         </button>
 
         <a
-          v-if="resultUrl"
+          v-if="previewBg === 'image' && compositeUrl"
+          :href="compositeUrl"
+          :download="`purecut_${fileName.replace(/\.[^/.]+$/, '')}_with-bg.jpg`"
+          class="btn-cta"
+          title="Download the cutout on your background as a full-resolution JPG"
+        >
+          <Download :size="15" /> Download with BG
+        </a>
+        <a
+          v-else-if="resultUrl"
           :href="resultUrl"
           :download="`purecut_${fileName.replace(/\.[^/.]+$/, '')}.png`"
           class="btn-cta"
@@ -157,6 +192,29 @@ defineEmits(['toggle-subjects', 'update:activeTool', 'update:previewBg', 'reset'
         >
           Color
         </button>
+        <button
+          :class="['bg-btn', 'bg-btn-image', { active: previewBg === 'image' }]"
+          @click="onImageBackdrop"
+          :title="backgroundUrl ? (previewBg === 'image' ? 'Change background photo' : 'Show your background photo') : 'Place the cutout on your own photo'"
+        >
+          <ImagePlus :size="12" /> Image
+        </button>
+        <button
+          v-if="backgroundUrl && previewBg === 'image'"
+          class="bg-btn bg-btn-clear"
+          @click="onClearBackground"
+          title="Remove the background photo"
+          aria-label="Remove the background photo"
+        >
+          <X :size="12" />
+        </button>
+        <input
+          ref="bgInput"
+          type="file"
+          accept="image/png, image/jpeg, image/webp"
+          hidden
+          @change="onBackgroundPicked"
+        />
       </div>
     </div>
   </div>
@@ -284,6 +342,17 @@ defineEmits(['toggle-subjects', 'update:activeTool', 'update:previewBg', 'reset'
   border-radius: 5px;
   cursor: pointer;
   transition: all 0.2s;
+}
+
+.bg-btn-image,
+.bg-btn-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bg-btn-clear {
+  padding: 3px 5px;
 }
 
 .bg-btn.active {

@@ -35,9 +35,9 @@ upgrading TS breaks `npm run typecheck` with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
 Do not bump TypeScript past 5 until vue-tsc supports TS 7.
 
 `npm run test:regression` is the structural safety net: a Playwright suite
-(`tests/e2e/regression.mjs`, 66 lines of orchestration over `tests/e2e/checks/*`)
-that needs the dev server on :5173 and clicks through the whole app, including
-inference, in **66 checks**. Run it before and after any structural change. It
+(`tests/e2e/regression.mjs`, 68 lines of orchestration over `tests/e2e/checks/*`)
+that needs the dev server on :5173 (or another URL via `PURECUT_BASE_URL`) and
+clicks through the whole app, including inference, in **98 checks**. Run it before and after any structural change. It
 catches a lost element or a dead handler, but **not** lost styling, so pair it
 with a visual check whenever markup moves between files. For styling there is
 `scripts/css-parity.mjs` (see below), which is the only guard against a rule
@@ -47,13 +47,13 @@ that silently stopped matching.
 
 | Module | Role |
 | --- | --- |
-| `src/App.vue` | The application shell: the composable wiring block, the four function refs, `getCanvasCoords`, `reset` and the lifecycle hooks, plus the template that composes the components below. **531 lines** (script 339, template 184) — down from 4404. |
-| `src/aiEngine.js` | Transformers.js wrapper. Model loading, device selection (WebGPU vs WASM), and the WebGPU→WASM fallback. |
-| `src/detectionEngine.js` | Pure pixel analysis: connected-component subject detection, magic-wand flood fill, mask contour extraction. No Vue, no DOM. |
+| `src/App.vue` | The application shell: the composable wiring block, the four function refs, `getCanvasCoords`, `reset` and the lifecycle hooks, plus the template that composes the components below. **592 lines** (script 375, template 210) — down from 4404. |
+| `src/aiEngine.js` | Transformers.js wrapper. Model loading, device selection (WebGPU vs WASM), the WebGPU→WASM fallback, one-model-resident session disposal, and the WASM proxy-worker switch. |
+| `src/detectionEngine.js` | The canvas side of detection: downscaling, subject thumbnails, mapping back to full resolution. The pixel algorithms it calls live in `core/detection.ts`. |
 | `src/constants.js` | `appVersion`, `modelOptions`, `changelog`, `roadmap`. |
-| `src/components/*.vue` | The view layer, one concern per file: `Navbar`, `ModelStatusBar`, `UploadHero`, `ProcessingOverlay`, `StageHeader`, `CanvasViewport`, `StageFooter`, `TuningSidebar`, `SubjectsDrawer`, `ZoomToolbar`, `ModelChangePrompt`, `ReplaceImagePrompt`, plus the three lazy-loaded modals (Info / Settings / Showcase) and their sub-components: `ShowcaseSliderStage`, `ShowcaseDiagnosis`, `ShowcaseGallery`, `InfoChangelogTab`, `InfoRoadmapTab`, `InfoAboutTab`, `InfoStorageTab`, plus the tour pair `TutorialButton` / `TutorialOverlay` and `FontSizeButton`. Dumb props + emits; all state stays in `App.vue`. |
-| `src/composables/*.ts` | `setup()`-scope state and behaviour, one concern per composable. Dependencies arrive as refs/callbacks rather than imports, so each module's signature is its whole contract: `useDisplayScale`, `useWorkspaceUi`, `useZoomPan`, `useTelemetry`, `useUndoRedo`, `useImageInput`, `useOutlineOverlay`, `useSubjects`, `useBrush`, `useSelectionOverlay`, `useSelectionTools`, `useCompositor`, `useModelCache`, `useKeyboardShortcuts`, `useProcessing`, `useTutorial`. |
-| `src/core/*.ts` | Framework-free modules: no Vue, no DOM side effects. Must be unit-testable in isolation. Currently `storageKeys.ts`, `canvasStore.ts`, `format.ts`, `geometry.ts`, `maskOps.ts`, `tutorial.ts`. |
+| `src/components/*.vue` | The view layer, one concern per file: `Navbar`, `ModelStatusBar`, `UploadHero`, `ProcessingOverlay`, `StageHeader`, `CanvasViewport`, `StageFooter`, `TuningSidebar`, `SubjectsDrawer`, `ZoomToolbar`, `ModelChangePrompt`, `ReplaceImagePrompt`, `BatchPanel`, plus the three lazy-loaded modals (Info / Settings / Showcase) and their sub-components: `ShowcaseSliderStage`, `ShowcaseDiagnosis`, `ShowcaseGallery`, `InfoChangelogTab`, `InfoRoadmapTab`, `InfoAboutTab`, `InfoStorageTab`, plus the tour pair `TutorialButton` / `TutorialOverlay` and `FontSizeButton`. Dumb props + emits; all state stays in `App.vue`. |
+| `src/composables/*.ts` | `setup()`-scope state and behaviour, one concern per composable. Dependencies arrive as refs/callbacks rather than imports, so each module's signature is its whole contract: `useDisplayScale`, `useWorkspaceUi`, `useZoomPan`, `useTelemetry`, `useUndoRedo`, `useImageInput`, `useOutlineOverlay`, `useSubjects`, `useBrush`, `useSelectionOverlay`, `useSelectionTools`, `useCompositor`, `useModelCache`, `useKeyboardShortcuts`, `useProcessing`, `useTutorial`, `useBatch`, `useCustomBackground`, `useInstallPrompt` (the last registers a window listener on import; see constraint 10). |
+| `src/core/*.ts` | Framework-free modules: no Vue, no DOM side effects. Must be unit-testable in isolation. Currently `storageKeys.ts`, `canvasStore.ts`, `format.ts`, `geometry.ts`, `maskOps.ts`, `tutorial.ts`, `platform.ts`, `detection.ts`, `zip.ts`. |
 | `scripts/context-report.mjs` | The size budget tool: per-file lines/tokens, plus a per-block breakdown for oversized `.vue` files. |
 | `scripts/css-parity.mjs` | Normalises the CSS of a build into a sorted set of `selector | declaration` lines and diffs two snapshots. The only guard against a rule that silently stopped matching. |
 
@@ -70,6 +70,15 @@ blob → the mask is drawn into an offscreen canvas → brush/selection tools mu
 that mask canvas in place → `recompositeCanvas()` applies threshold / trim /
 de-fringe and exports a PNG blob → undo snapshots and subject detection both
 branch off the same mask canvas.
+
+Two side paths reuse that pipeline without touching the studio's state:
+- **Batch** (`useBatch`): several files from the hero → one `runTransformersModel()`
+  per file → `renderCutout()` (the same function the heavy export uses) → PNGs
+  packed by `core/zip.ts` into one ZIP. The canvas store, undo and subjects are
+  never written, so the open workspace survives a batch.
+- **Custom background** (`useCustomBackground`): watches `resultBlob`, cover-fits
+  the user's photo to the cutout's size, and publishes a flattened JPEG as
+  `compositeUrl`, which `StageHeader` downloads while the `image` backdrop is on.
 
 ## Where things live
 
@@ -89,9 +98,13 @@ are presentational and talk back through emits only.
 | Presets, tuning sliders, engine selects, telemetry card | `components/TuningSidebar.vue` |
 | Guided-tour trigger + overlay, sample-image quick try | `components/TutorialButton.vue`, `components/TutorialOverlay.vue`, `composables/useTutorial.ts`, `core/tutorial.ts` |
 | Subject drawer | `components/SubjectsDrawer.vue` |
+| Batch mode (queue, progress panel, ZIP) | `composables/useBatch.ts`, `components/BatchPanel.vue`, `core/zip.ts`; multi-file intake in `useImageInput.ts` |
+| Custom background photo + flattened JPG | `composables/useCustomBackground.ts`; picker in `StageHeader.vue`, preview layer in `CanvasViewport.vue` |
+| PWA install button + per-platform steps | `composables/useInstallPrompt.ts`, `components/InfoAboutTab.vue`; manifest in `public/manifest.webmanifest` |
+| Offline app-shell cache | the PureCut block at the top of `public/coi-serviceworker.js` |
 | "Switch model?" / "Replace image?" prompts | `components/ModelChangePrompt.vue`, `components/ReplaceImagePrompt.vue` |
 | Model loading, device selection + fallback | `aiEngine.js` |
-| Subject detection, flood fill, contour extraction | `detectionEngine.js` |
+| Subject detection, flood fill, contour extraction | `detectionEngine.js` (canvas), `core/detection.ts` (algorithms) |
 | Fast GPU preview vs full-quality export | `composables/useCompositor.ts` |
 | Mask history (undo/redo/reset) | `composables/useUndoRedo.ts` |
 | Global keyboard shortcuts (undo/redo, selection keys) | `composables/useKeyboardShortcuts.ts` |
@@ -379,6 +392,13 @@ sample load and then *waits*; a second click while `isProcessing` is a no-op.
    `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy`, and
    `public/coi-serviceworker.js` replicates them for static hosting.
    Multi-threaded WASM inference breaks without them. Do not remove or relax.
+   That service worker is vendored (coi-serviceworker 0.1.7) **plus** a PureCut
+   block at the top: `pcShellFetch`, a network-first cache of same-origin GETs
+   that makes the installed PWA open offline. The vendored fetch handler calls it
+   instead of `fetch`. If you upgrade the vendored file, re-apply that block; a
+   browser only allows one service worker per scope, so it cannot be a second file.
+   Editing this file makes every existing visitor's page reload once (the vendored
+   script reloads on `updatefound`).
 
 4. **The WebGPU→WASM fallback must survive refactors.** `aiEngine.js` retries on
    failure and downgrades the selected device. Do not simplify it into a single
@@ -399,6 +419,24 @@ sample load and then *waits*; a second click while `isProcessing` is a no-op.
 8. **`detectedSubjects` items are mutated in place** (`subject.visible = …`).
    This works only because `ref([])` is deeply reactive — do not change that
    array to `shallowRef`.
+
+9. **The WASM proxy worker is on only where WebGPU can never run.**
+   `env.backends.onnx.wasm.proxy = !CAN_USE_WEBGPU` in `aiEngine.js`. ONNX Runtime
+   reads it once per page, and the proxy rejects GPU-resident tensors, so turning
+   it on where a WebGPU session may also run is unsafe. In a production build the
+   proxy worker loads the `transformers-engine` chunk itself; that was verified
+   to work, so keep the `manualChunks` split in `vite.config.js` intact.
+
+10. **Released pipelines are disposed only when no inference is in flight.**
+   Loading a model releases every other cached one (one model resident at a time),
+   but `releasePipeline` queues the dispose until `activeRuns` is zero: disposing
+   a session another run is still awaiting makes that run hang. Keep the
+   `activeRuns++` / `finally` pair in `runTransformersModel` together.
+
+11. **`useInstallPrompt` must be imported by `main.js`.** Browsers fire
+   `beforeinstallprompt` once, early in page load; the About tab that shows the
+   Install button is lazy-loaded much later, so the listener has to be registered
+   at startup or the button never appears.
 
 ## Conventions
 
@@ -444,7 +482,7 @@ sample load and then *waits*; a second click while `isProcessing` is a no-op.
    taking the ~120 ms debounce. The de-fringe toggle beside them is called with
    no arguments and does debounce. Pre-existing; preserved deliberately during the
    extraction (see the note in `TuningSidebar.vue`), not fixed.
-8. `src/App.vue` (561 lines) carries its own 600-line `targetAppVueLines` rather
+8. `src/App.vue` (592 lines) carries its own 600-line `targetAppVueLines` rather
    than the general `maxFileLines`. The user has explicitly forgiven it: shrinking
    it further would mean either compacting the component tags' attribute lists
    onto single lines (which keeps the token count and only games the metric) or
@@ -455,12 +493,21 @@ sample load and then *waits*; a second click while `isProcessing` is a no-op.
    `InfoModal.vue` 789 → 279 plus four `Info*Tab` components. `maxFileLines` is
    now 800 (raised from 450 by user request), so the general budget no longer
    flags a file that is long only through comments and scoped CSS.
+9. Cutouts are never fully opaque: about 98% of a subject's pixels sit at alpha
+   250–254, because the model's mask rarely reaches 255 and
+   `applyTrimThresholdDefringe` rescales from the threshold without clamping the
+   top. The subject looks solid, but is very slightly translucent over a
+   background. Found while verifying batch output (the studio export matches it
+   byte for byte); not changed.
+10. With a custom background active, the export button reads *Download PNG* for
+   about a second before switching to *Download with BG*, while the flattened
+   full-resolution JPEG is rendered.
 
 ## Test layout
 
 | Path | Runner | Scope |
 | --- | --- | --- |
-| `tests/unit/*.test.ts` | `npm test` (vitest) | `src/core/*.ts`: pure functions, no DOM |
+| `tests/unit/*.test.ts` | `npm test` (vitest) | `src/core/*.ts` (incl. `detection.ts`, `zip.ts`) and `scripts/version.mjs`: pure functions, no DOM |
 | `tests/e2e/regression.mjs` | `npm run test:regression` | orchestrator: builds the harness, runs the areas |
 | `tests/e2e/lib/constants.mjs` | — | env defaults, benign-noise allowlist, fixtures |
 | `tests/e2e/lib/harness.mjs` | — | `Harness`, `check`/`skip`, screenshots, reporting |

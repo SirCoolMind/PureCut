@@ -20,6 +20,8 @@ import { useModelCache } from './composables/useModelCache.js'
 import { useKeyboardShortcuts } from './composables/useKeyboardShortcuts.js'
 import { useProcessing } from './composables/useProcessing.js'
 import { useTutorial } from './composables/useTutorial.js'
+import { useBatch } from './composables/useBatch.js'
+import { useCustomBackground } from './composables/useCustomBackground.js'
 import ProcessingOverlay from './components/ProcessingOverlay.vue'
 import UploadHero from './components/UploadHero.vue'
 import ModelChangePrompt from './components/ModelChangePrompt.vue'
@@ -33,6 +35,7 @@ import TuningSidebar from './components/TuningSidebar.vue'
 import Navbar from './components/Navbar.vue'
 import CanvasViewport from './components/CanvasViewport.vue'
 import TutorialOverlay from './components/TutorialOverlay.vue'
+import BatchPanel from './components/BatchPanel.vue'
 
 // Lazy-loaded modals for optimal initial bundle size and instantaneous first load
 const InfoModal = defineAsyncComponent(() => import('./components/InfoModal.vue'))
@@ -148,6 +151,10 @@ const {
   saveUndoState
 })
 
+const { backgroundUrl, compositeUrl, setBackgroundFile, clearBackground } = useCustomBackground({ resultBlob })
+const { batch, runBatch, cancelBatch, closeBatch, downloadZip } =
+  useBatch({ selectedModel, selectedDevice, currentModelMeta, ttaFlipFusion, cachedModels, tuning })
+
 const {
   fileInput,
   showReplaceImagePrompt,
@@ -164,7 +171,7 @@ const {
   onDrop,
   onPaste,
   copyToClipboard
-} = useImageInput({ originalUrl, resultBlob, copied, processImage })
+} = useImageInput({ originalUrl, resultBlob, copied, processImage, processBatch: runBatch })
 
 // Captures the hero's hidden file input for useImageInput. Has to be a stable
 // function: an inline arrow would be re-created on every render, and Vue
@@ -429,12 +436,17 @@ onUnmounted(() => {
             @toggle-subjects="showSubjectsDrawer = !showSubjectsDrawer"
             @update:active-tool="activeTool = $event"
             @update:preview-bg="previewBg = $event"
+            :background-url="backgroundUrl"
+            :composite-url="compositeUrl"
+            @pick-background="setBackgroundFile"
+            @clear-background="clearBackground"
             @reset="requestNewImage"
             @copy="copyToClipboard"
           />
 
           <CanvasViewport
             :preview-bg="previewBg"
+            :background-url="backgroundUrl"
             :active-tool="activeTool"
             :is-panning="isPanning"
             :result-url="resultUrl"
@@ -514,6 +526,8 @@ onUnmounted(() => {
       @close="cancelModelRerun"
       @confirm="confirmModelRerun"
     />
+
+    <BatchPanel :batch="batch" :current-model-meta="currentModelMeta" @close="closeBatch" @cancel="cancelBatch" @download="downloadZip" />
 
     <ReplaceImagePrompt
       :show="showReplaceImagePrompt"

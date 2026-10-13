@@ -18,7 +18,7 @@ export function useWorkspaceUi() {
   const userMode = ref('standard') // 'standard' | 'power'
   const activeTool = ref('slider') // 'slider' | 'brush' | 'select' | 'pan'
   const sliderPosition = ref(50)
-  const previewBg = ref('checkerboard') // 'checkerboard' | 'white' | 'black' | 'gradient'
+  const previewBg = ref('checkerboard') // 'checkerboard' | 'white' | 'black' | 'gradient' | 'image'
   const copied = ref(false)
 
   return { userMode, activeTool, sliderPosition, previewBg, copied }
