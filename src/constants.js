@@ -1,4 +1,4 @@
-export const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.5.0'
+export const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.6.0'
 export const appBuildHash = typeof __APP_BUILD_HASH__ !== 'undefined' ? __APP_BUILD_HASH__ : 'dev'
 export const appBuildTime = typeof __APP_BUILD_TIME__ !== 'undefined' ? __APP_BUILD_TIME__ : ''
 
@@ -21,9 +21,26 @@ export const activeModelOptions = modelOptions.filter((model) => model.active !=
 
 export const changelog = [
   {
+    version: '1.6.0',
+    date: '2026-10-13',
+    tag: 'Latest',
+    changes: [
+      { type: 'new', text: 'Batch processing: select or drop several photos to cut them all out with your current model and tuning, then download one ZIP' },
+      { type: 'new', text: 'Custom background replacement: the new Image backdrop places the cutout on your own photo and downloads it as a full-resolution JPG' },
+      { type: 'new', text: 'Installable app (PWA): install PureCut from the browser and open it offline once a model is downloaded (see About)' },
+      { type: 'new', text: 'Guided tutorial button and a one-click sample photo to try a real cutout' },
+      { type: 'new', text: 'Model Showcase: added Exhibit A, Winter' },
+      { type: 'new', text: 'Animated processing progress with clearer stages' },
+      { type: 'perf', text: 'Inference runs in a background worker on browsers without WebGPU (Safari, iOS), so the interface stays responsive' },
+      { type: 'perf', text: 'Switching models now frees the previous model from memory instead of keeping every loaded model' },
+      { type: 'fix', text: 'Safari and iOS browsers now always use CPU (WASM) inference, avoiding failed WebGPU sessions' },
+      { type: 'fix', text: 'Hugging Face access token is now attached reliably to every model request' }
+    ]
+  },
+  {
     version: '1.5.0',
     date: '2026-09-27',
-    tag: 'Latest',
+    tag: 'Previous',
     changes: [
       { type: 'new', text: 'Added the local Node-based RMBG-2.0 lab with checkpoint memory safeguards and live resource monitoring.' },
       { type: 'perf', text: 'Curated the browser model picker: inactive U²-Net models are hidden and unsupported graphs use CPU WASM.' },
@@ -136,6 +153,7 @@ export const roadmap = [
     category: '⚡ Performance',
     items: [
       { text: 'RMBG-2.0 local Node lab with memory admission safeguards', status: 'done' },
+      { text: 'Off-main-thread inference on browsers without WebGPU', status: 'done' },
       { text: 'WebGPU compute shader post-processing', status: 'planned' },
       { text: 'Web Worker offloading for compositing', status: 'planned' },
     ]
@@ -151,7 +169,7 @@ export const roadmap = [
     category: '📱 Platform & UX',
     items: [
       { text: 'Keyboard shortcuts — B, S, [ ], Ctrl+Z, Space', status: 'up-next' },
-      { text: 'Progressive Web App (PWA) — offline installable', status: 'planned' },
+      { text: 'Progressive Web App (PWA) — offline installable', status: 'done' },
       { text: 'Mobile-optimized touch UI', status: 'planned' },
     ]
   }

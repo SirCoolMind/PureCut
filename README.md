@@ -38,9 +38,54 @@ PureCut is a private, client-side AI tool for removing image backgrounds directl
   - Drag-and-drop images anywhere into the upload card.
   - File picker dialog.
   - **Clipboard Paste**: Press `Ctrl + V` (or `⌘ + V` on Mac) to paste images directly.
+  - **Sample photo**: one click runs a real cutout, and a guided tutorial walks through the studio.
+- **📦 Batch Processing → ZIP**: Select or drop several photos at once. Each one is cut out with the selected model and your current tuning, and every PNG arrives in a single ZIP. The open workspace is left untouched, failed files are listed with their error, and *Cancel* stops after the photo in progress while still saving what finished.
 - **Interactive Split Comparison Slider**: Seamlessly inspect the original image vs. the cutout with a custom handle.
-- **Backdrop Switcher**: Preview the transparent cutout against Grid, White, Dark, or Color Gradient.
+- **Backdrop Switcher**: Preview the transparent cutout against Grid, White, Dark, Color Gradient, or **your own photo**.
+- **🖼️ Custom Background Replacement**: Choose *Image* in the backdrop switcher to place the cutout on any photo (cover-fitted, never stretched). While it is active, the download button becomes **Download with BG** and saves the flattened result as a full-resolution JPG. Remove it with the ✕ next to the button.
 - **High-Resolution PNG Download & Clipboard Copy**: Full-resolution PNG download and 1-click clipboard export.
+- **📲 Installable App (PWA)**: Install PureCut from the browser to get its own window and icon. Once installed and a model is downloaded, it opens and works without an internet connection. See [Install PureCut as an app](#-install-purecut-as-an-app).
+- **Responsive on every browser**: On browsers without WebGPU (Safari, iOS), inference runs in a background worker so the interface never freezes.
+
+---
+
+## 📲 Install PureCut as an app
+
+PureCut is a Progressive Web App (PWA). Installing it is optional, but it gives you a standalone
+window, a desktop or home-screen icon, and **offline use**. Nothing is uploaded either way.
+
+**Quickest route:** open PureCut, click the version badge (e.g. `v1.6.0`) in the top bar, go to
+the **About** tab, and press **Install PureCut**. The button appears only in browsers that support
+one-click install; otherwise the About tab shows the steps for your device, which are also listed
+below.
+
+| Device / browser | How to install |
+| --- | --- |
+| **Chrome, Edge or Brave** (Windows, macOS, Linux, ChromeOS) | Click the install icon (a monitor with a down arrow) at the right of the address bar, or open the browser menu (**⋮**) and choose **Install PureCut** (in Edge: **Apps → Install this site as an app**). |
+| **Chrome on Android** | Open the **⋮** menu and tap **Install app** (on some versions: **Add to Home screen**). |
+| **Safari on iPhone / iPad** | Tap **Share** (the square with an arrow), then **Add to Home Screen**, then **Add**. |
+| **Safari on macOS (Sonoma or later)** | **File → Add to Dock**. |
+| **Firefox (desktop)** | Not supported: Firefox does not install web apps. Use it as a normal website. |
+
+**Using it offline**
+
+1. Open PureCut once while online, so the app itself is cached.
+2. Process at least one image with the model you want to use offline, or press the pre-download
+   button: model weights are downloaded once and then stored on your device.
+3. From then on the installed app opens and removes backgrounds without a connection. Switching to
+   a model you have never downloaded still needs the internet.
+
+**Good to know**
+
+- **Updates** install themselves: whenever you are online the app loads the latest version, and the
+  in-app update prompt tells you when a new release is ready.
+- **Uninstall** like any other app: from the app window's menu (**⋮ → Uninstall PureCut**) on
+  desktop, by long-pressing the icon on Android, or by deleting the home-screen icon on iOS.
+- **Storage:** *Clear Cache* in the Storage tab removes downloaded models. The app keeps working
+  online and re-caches itself on the next visit.
+- **No install button?** The app may already be installed (you will see *PureCut is installed on
+  this device* in About), the browser may not support installing (see the table), or the page is
+  not served over HTTPS. `localhost` counts as secure for local development.
 
 ---
 
@@ -166,14 +211,28 @@ while idle. See [`rmbg2/README.md`](rmbg2/README.md) for setup and troubleshooti
 
 ```
 PureCut/
-├── index.html              # HTML shell & app entry point
-├── package.json            # Project dependencies & scripts
-├── vite.config.js          # Vite build configuration (opens browser on port 5173)
-├── start.bat               # 1-click Windows launcher script
-├── README.md               # Project documentation (this file)
-└── src/
-    ├── main.js             # Vue 3 application mount
-    └── App.vue             # Core component: UI, dropzone, AI inference, slider, & controls
+├── index.html                 # HTML shell: SEO tags, PWA manifest link, service worker loader
+├── package.json               # Dependencies & scripts
+├── vite.config.js             # Vite config (dev server, COOP/COEP headers, version.json)
+├── start.bat                  # 1-click Windows launcher
+├── AGENTS.md                  # Architecture guide for contributors and AI agents
+├── public/
+│   ├── manifest.webmanifest   # PWA manifest (name, icons, standalone display)
+│   ├── coi-serviceworker.js   # Cross-origin isolation + offline app-shell cache
+│   └── ...                    # Icons, sample photo, showcase images
+├── src/
+│   ├── main.js                # Vue mount; registers the PWA install listener early
+│   ├── App.vue                # Shell that wires the composables and components together
+│   ├── aiEngine.js            # Model loading, WebGPU/WASM selection, inference
+│   ├── detectionEngine.js     # Canvas side of subject detection, magic wand, outline
+│   ├── constants.js           # Version, model catalogue, changelog, roadmap
+│   ├── components/            # View layer (Navbar, StageHeader, BatchPanel, modals...)
+│   ├── composables/           # State + behaviour (useProcessing, useBatch, useCustomBackground...)
+│   └── core/                  # Framework-free, unit-tested logic (maskOps, detection, zip...)
+├── tests/
+│   ├── unit/                  # Vitest suites for src/core and scripts
+│   └── e2e/                   # Playwright regression suite (npm run test:regression)
+└── rmbg2/                     # Local Node RMBG-2.0 lab (not part of the web app)
 ```
 
 ---
@@ -182,8 +241,10 @@ PureCut/
 
 - **Framework**: [Vue 3](https://vuejs.org/) (Composition API with `<script setup>`)
 - **Bundler / Dev Server**: [Vite](https://vitejs.dev/)
-- **AI Background Removal**: [`@imgly/background-removal`](https://github.com/imgly/background-removal-js)
+- **AI Inference**: [Transformers.js](https://huggingface.co/docs/transformers.js) on [ONNX Runtime Web](https://onnxruntime.ai/docs/get-started/with-javascript/web.html) (WebGPU + WASM)
+- **Offline / PWA**: Web App Manifest + [`coi-serviceworker`](https://github.com/gzuidhof/coi-serviceworker) extended with an app-shell cache
 - **Icon Set**: [`lucide-vue-next`](https://lucide.dev/)
+- **Testing**: [Vitest](https://vitest.dev/) (unit) and [Playwright](https://playwright.dev/) (end-to-end regression)
 
 ---
 
@@ -194,21 +255,29 @@ PureCut/
 - [x] Zoom and pan workspace.
 - [x] Curated browser model catalogue with safe WASM fallback.
 - [x] Local Node RMBG-2.0 lab with RAM admission safeguards and live resource monitoring.
+- [x] Batch processing with ZIP download.
+- [x] Custom background replacement.
+- [x] Installable PWA with offline support.
+- [x] Off-main-thread inference on browsers without WebGPU.
 
 ### Planned
 - [ ] Brush hardness / softness and pressure-sensitive stylus support.
 - [ ] Visual undo history and named export presets.
-- [ ] Custom background replacement and multi-layer compositing.
-- [ ] Batch processing with ZIP download.
+- [ ] Multi-layer compositing.
 - [ ] WebGPU post-processing and Web Worker compositing.
 - [ ] Multi-format and custom-resolution exports.
-- [ ] Keyboard shortcuts, PWA support, and mobile-optimized controls.
+- [ ] Keyboard shortcuts and mobile-optimized controls.
 
 ---
 
 ## 💡 Notes for Future Conversations & Development
 
-If extending this application in future chats, here are useful entry points:
-- **`src/App.vue`**: Contains the full UI and background removal pipeline in `processImage(file)`.
-- **Edge refinement / Feathering**: Can be added before exporting by manipulating alpha matte channels on an HTML5 `<canvas>`.
-- **Batch Processing**: Multiple images can be processed sequentially by accepting `FileList` in `onDrop` / `onFileSelect` and looping through `removeBackground()`.
+Start with [`AGENTS.md`](AGENTS.md): it maps every module, the commands, and the rules that keep
+the codebase healthy (file-size budget, regression suite, CSS parity check). Useful entry points:
+- **`src/composables/useProcessing.ts`**: the single-image pipeline, `processImage(file)`.
+- **`src/composables/useBatch.ts`**: batch mode; reuses `renderCutout` from `useCompositor.ts`, so
+  batch PNGs match the studio's Download PNG exactly.
+- **`src/composables/useCustomBackground.ts`**: background photo preview and flattened JPG export.
+- **`src/aiEngine.js`**: model loading, device choice, and the WASM proxy worker switch.
+- **`public/coi-serviceworker.js`**: vendored service worker; the PureCut addition at the top is the
+  offline app-shell cache.
