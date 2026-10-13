@@ -39,9 +39,11 @@ interface ImageInputDeps {
   copied: Ref<boolean>
   /** The AI pipeline. Called with the accepted file. */
   processImage: (file: File) => Promise<void>
+  /** Batch mode, owned by useBatch. Called when several images arrive at once. */
+  processBatch?: (files: File[]) => Promise<void>
 }
 
-export function useImageInput({ originalUrl, resultBlob, copied, processImage }: ImageInputDeps) {
+export function useImageInput({ originalUrl, resultBlob, copied, processImage, processBatch }: ImageInputDeps) {
   /** Template ref for the hidden file input. */
   const fileInput = ref<HTMLInputElement | null>(null)
 
@@ -109,15 +111,23 @@ export function useImageInput({ originalUrl, resultBlob, copied, processImage }:
     pendingNewImageFile.value = null
   }
 
+  /** One image opens the studio; several go to batch mode, leaving the workspace alone. */
+  function acceptFiles(list: FileList | null | undefined) {
+    const images = Array.from(list || []).filter((f) => f.type.startsWith('image/'))
+    if (images.length > 1 && processBatch) processBatch(images)
+    else if (images[0]) confirmAndProcessImage(images[0])
+  }
+
   // Event Handlers
   function onFileSelect(e: Event) {
-    const file = (e.target as HTMLInputElement).files?.[0]
-    if (file) confirmAndProcessImage(file)
+    const input = e.target as HTMLInputElement
+    acceptFiles(input.files)
+    // Clear it so picking the same file(s) again still fires `change`.
+    input.value = ''
   }
 
   function onDrop(e: DragEvent) {
-    const file = e.dataTransfer?.files?.[0]
-    if (file) confirmAndProcessImage(file)
+    acceptFiles(e.dataTransfer?.files)
   }
 
   function onPaste(e: ClipboardEvent) {

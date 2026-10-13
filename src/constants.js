@@ -128,7 +128,7 @@ export const roadmap = [
   {
     category: '📦 Batch & Workflow',
     items: [
-      { text: 'Batch processing — process multiple images → ZIP download', status: 'planned' },
+      { text: 'Batch processing — process multiple images → ZIP download', status: 'done' },
       { text: 'Preset export profiles — save named tuning combinations', status: 'planned' },
     ]
   },

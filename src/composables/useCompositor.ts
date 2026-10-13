@@ -33,7 +33,7 @@ import { reactive, type Ref } from 'vue'
 import { maskCanvas, maskCtx, originalCanvas, originalCtx } from '../core/canvasStore.js'
 import { applyTrimThresholdDefringe } from '../core/maskOps.js'
 
-interface Tuning {
+export interface Tuning {
   preset: string
   threshold: number
   feather: number
@@ -50,6 +50,57 @@ interface CompositorDeps {
   resultBlob: Ref<Blob | null>
   /** The visible preview canvas, bound in the template. */
   displayCanvasRef: Ref<HTMLCanvasElement | null>
+}
+
+/**
+ * The full-quality cutout: `original` with `mask` applied through feather, trim,
+ * threshold and de-fringe at `width` x `height`. Shared by the studio's heavy
+ * export and batch mode, so a batch ZIP holds exactly what Download PNG would.
+ */
+export function renderCutout(
+  original: CanvasImageSource,
+  mask: CanvasImageSource,
+  width: number,
+  height: number,
+  tuning: Tuning
+): HTMLCanvasElement {
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+
+  // Draw original image
+  ctx.drawImage(original, 0, 0, width, height)
+  const imgData = ctx.getImageData(0, 0, width, height)
+  const imgPixels = imgData.data
+
+  // Apply feather (blur) if requested
+  const tempMaskCanvas = document.createElement('canvas')
+  tempMaskCanvas.width = width
+  tempMaskCanvas.height = height
+  const tempMaskCtx = tempMaskCanvas.getContext('2d', { willReadFrequently: true })!
+
+  // If trim is used but feather is 0, we need a slight blur to allow morphological edge shifting
+  let applyBlur = tuning.feather;
+  if (tuning.trim !== 0 && applyBlur === 0) {
+    applyBlur = Math.abs(tuning.trim) * 1.5;
+  }
+  if (applyBlur > 0) {
+    tempMaskCtx.filter = `blur(${applyBlur}px)`
+  }
+
+  tempMaskCtx.drawImage(mask, 0, 0, width, height)
+  const maskData = tempMaskCtx.getImageData(0, 0, width, height)
+  const maskPixels = maskData.data
+
+  const totalPixels = width * height
+
+  // Trim -> threshold -> de-fringe. Pure pixel maths, so it lives in
+  // core/maskOps.ts where vitest can reach it without a canvas.
+  applyTrimThresholdDefringe(imgPixels, maskPixels, totalPixels, tuning)
+
+  ctx.putImageData(imgData, 0, 0)
+  return canvas
 }
 
 export function useCompositor({ imageDimensions, resultUrl, resultBlob, displayCanvasRef }: CompositorDeps) {
@@ -143,42 +194,7 @@ export function useCompositor({ imageDimensions, resultUrl, resultBlob, displayC
     }
 
     const runHeavyExport = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = width
-      canvas.height = height
-      const ctx = canvas.getContext('2d', { willReadFrequently: true })!
-
-      // Draw original image
-      ctx.drawImage(originalCanvas, 0, 0)
-      const imgData = ctx.getImageData(0, 0, width, height)
-      const imgPixels = imgData.data
-
-      // Apply feather (blur) if requested
-      const tempMaskCanvas = document.createElement('canvas')
-      tempMaskCanvas.width = width
-      tempMaskCanvas.height = height
-      const tempMaskCtx = tempMaskCanvas.getContext('2d', { willReadFrequently: true })!
-
-      // If trim is used but feather is 0, we need a slight blur to allow morphological edge shifting
-      let applyBlur = tuning.feather;
-      if (tuning.trim !== 0 && applyBlur === 0) {
-        applyBlur = Math.abs(tuning.trim) * 1.5;
-      }
-      if (applyBlur > 0) {
-        tempMaskCtx.filter = `blur(${applyBlur}px)`
-      }
-
-      tempMaskCtx.drawImage(maskCanvas, 0, 0)
-      const maskData = tempMaskCtx.getImageData(0, 0, width, height)
-      const maskPixels = maskData.data
-
-      const totalPixels = width * height
-
-      // Trim -> threshold -> de-fringe. Pure pixel maths, so it lives in
-      // core/maskOps.ts where vitest can reach it without a canvas.
-      applyTrimThresholdDefringe(imgPixels, maskPixels, totalPixels, tuning)
-
-      ctx.putImageData(imgData, 0, 0)
+      const canvas = renderCutout(originalCanvas, maskCanvas, width, height, tuning)
 
       canvas.toBlob((blob) => {
         if (blob) {
