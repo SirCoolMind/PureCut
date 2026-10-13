@@ -21,6 +21,7 @@ import { useKeyboardShortcuts } from './composables/useKeyboardShortcuts.js'
 import { useProcessing } from './composables/useProcessing.js'
 import { useTutorial } from './composables/useTutorial.js'
 import { useBatch } from './composables/useBatch.js'
+import { useCustomBackground } from './composables/useCustomBackground.js'
 import ProcessingOverlay from './components/ProcessingOverlay.vue'
 import UploadHero from './components/UploadHero.vue'
 import ModelChangePrompt from './components/ModelChangePrompt.vue'
@@ -150,6 +151,7 @@ const {
   saveUndoState
 })
 
+const { backgroundUrl, compositeUrl, setBackgroundFile, clearBackground } = useCustomBackground({ resultBlob })
 const { batch, runBatch, cancelBatch, closeBatch, downloadZip } =
   useBatch({ selectedModel, selectedDevice, currentModelMeta, ttaFlipFusion, cachedModels, tuning })
 
@@ -434,12 +436,17 @@ onUnmounted(() => {
             @toggle-subjects="showSubjectsDrawer = !showSubjectsDrawer"
             @update:active-tool="activeTool = $event"
             @update:preview-bg="previewBg = $event"
+            :background-url="backgroundUrl"
+            :composite-url="compositeUrl"
+            @pick-background="setBackgroundFile"
+            @clear-background="clearBackground"
             @reset="requestNewImage"
             @copy="copyToClipboard"
           />
 
           <CanvasViewport
             :preview-bg="previewBg"
+            :background-url="backgroundUrl"
             :active-tool="activeTool"
             :is-panning="isPanning"
             :result-url="resultUrl"

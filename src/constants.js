@@ -121,7 +121,7 @@ export const roadmap = [
     category: '🖼️ Canvas & Viewport',
     items: [
       { text: 'Zoom & Pan — scroll zoom, drag pan, and 1-click reset zoom', status: 'done' },
-      { text: 'Custom background replacement — upload a new background', status: 'planned' },
+      { text: 'Custom background replacement — upload a new background', status: 'done' },
       { text: 'Multi-layer compositing — stack cutouts on one canvas', status: 'planned' },
     ]
   },
