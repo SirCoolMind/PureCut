@@ -1,6 +1,6 @@
 import { pipeline, env, AutoModelForSemanticSegmentation, RawImage } from '@huggingface/transformers';
 import { STORAGE_KEYS } from './core/storageKeys.js';
-import { FORCE_WASM_BROWSER } from './core/platform.js';
+import { FORCE_WASM_BROWSER, CAN_USE_WEBGPU } from './core/platform.js';
 import { modelOptions } from './constants.js';
 import { fuseTtaMask } from './core/maskOps.js';
 import { isSkillsafeModel, preloadSkillsafeModel, runSkillsafeModel, resetSkillsafeModels } from './skillsafeEngine.js';
@@ -31,7 +31,11 @@ if (AutoModelForSemanticSegmentation?.MODEL_CLASS_MAPPINGS?.[0]) {
 if (typeof window !== 'undefined') {
   env.allowLocalModels = false;
   if (env.backends?.onnx?.wasm) {
-    env.backends.onnx.wasm.proxy = false;
+    // When this page can never use WebGPU (Safari/iOS, or no navigator.gpu), every model runs
+    // on WASM - on the main thread unless proxied, freezing the UI and the progress animation
+    // for the whole inference. The proxy worker keeps it responsive. ORT reads this once per
+    // page and the proxy rejects GPU-resident tensors, so it stays off wherever WebGPU may run.
+    env.backends.onnx.wasm.proxy = !CAN_USE_WEBGPU;
     // Threads need SharedArrayBuffer, i.e. a cross-origin-isolated page. Safari ignores the
     // COEP `credentialless` header coi-serviceworker sends it, so it is never isolated there.
     env.backends.onnx.wasm.numThreads = window.crossOriginIsolated
