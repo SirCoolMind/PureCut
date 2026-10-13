@@ -43,10 +43,13 @@ if (typeof window !== 'undefined') {
   const originalFetch = env.fetch || window.fetch;
   env.fetch = async (url, init) => {
     const token = localStorage.getItem(STORAGE_KEYS.hfToken);
-    if (token && url.includes('huggingface.co')) {
-      init = init || {};
-      init.headers = init.headers || {};
-      init.headers['Authorization'] = `Bearer ${token.trim()}`;
+    const href = typeof url === 'string' ? url : (url?.url ?? String(url));
+    if (token && href.includes('huggingface.co')) {
+      // init.headers may be a plain object, an array of pairs or a Headers instance;
+      // normalising through Headers keeps the token from being silently dropped.
+      const headers = new Headers(init?.headers);
+      headers.set('Authorization', `Bearer ${token.trim()}`);
+      init = { ...init, headers };
     }
     return originalFetch(url, init);
   };
